@@ -6,6 +6,9 @@ MagneticFieldSensors; % build Symbolically H matrix
 
 % imageine point robot. Can act with them with 2 cartesian normal forces Fx
 % Fy
+
+TRIAL_VAR = "TRIAL_VAR";
+
 generic_A_matrix = [0 0 1 0;
                     0 0 0 1;
                     0 0 0 0;
