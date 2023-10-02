@@ -7,8 +7,6 @@ MagneticFieldSensors; % build Symbolically H matrix
 % imageine point robot. Can act with them with 2 cartesian normal forces Fx
 % Fy
 
-TRIAL_VAR = "TRIAL_VAR";
-
 generic_A_matrix = [0 0 1 0;
                     0 0 0 1;
                     0 0 0 0;
@@ -25,8 +23,8 @@ temp_K = cell(N,1);
 for i=1:N
     temp_A{i} = generic_A_matrix;
     temp_B{i} = generic_B_matrix;
-    temp_K{i} = [1 0 10  0;
-                 0 1  0 10]; % control gains
+    temp_K{i} = [5 0 10  0;
+                 0 5  0 10]; % control gains
 end
 
 total_A_matrix = blkdiag(temp_A{:});
@@ -69,7 +67,7 @@ if ~exist('rs_dist','var')
     d_safe = 2;
 else
     d_safe = rs_dist*0.75;
-    fprintf("Security distance among UAVs set to: %d",d_safe);
+    fprintf("Security distance among UAVs set to: %d\n",d_safe);
 end
 v_max = 5;
 ObgectiveWeights = [1 0.1 20];
@@ -104,7 +102,7 @@ else
 end
 
 
-% Event-triggered replanning thresholds
+% event-triggered replanning thresholds
 t_replanning = 8; % replanning timer [s]
 RHO_THRESHOLD = 2;
 SIGMA_TRESHOLD = 0.7;
@@ -128,6 +126,16 @@ for i = 1:N
     end
 end
 
+% obsevability index
+my_temp = H_function(recievers_pos);
+my_temp = my_temp*my_temp.';
+last_matrix_sum = my_temp;
+my_temp = sqrt(svds(last_matrix_sum,1,"smallestnz"));
+OI_VAL = [my_temp];
+
+% estimate variation
+TRANSMITTER_ESTIMATE_VARIATION = [0];
+ESTIMATE_VARIATION_THRESHOLD = 1e-06;
 
 
 %% MAINLOOP EXECUTION
@@ -136,21 +144,28 @@ STEP = 1;
 K_STEP = 2;
 
 % start video recording
-this_time = string(datetime('now'));
-vid_name = "MV-"+this_time;
-vid_name = regexprep(vid_name," ",":");
-vid_name = regexprep(vid_name,":","-");
-writerObj = VideoWriter(vid_name,'MPEG-4');
-% set the seconds per image
-approx_magnitude = 1;
-writerObj.FrameRate = 1/TIME_STEP;
-% open the writer
-open(writerObj);
+if RECORD_VIDEO
+    this_time = string(datetime('now'));
+    vid_name = "MV-"+this_time;
+    vid_name = regexprep(vid_name," ",":");
+    vid_name = regexprep(vid_name,":","-");
+    writerObj = VideoWriter(vid_name,'MPEG-4');
+    % set the seconds per image
+    approx_magnitude = 1;
+    writerObj.FrameRate = 1/TIME_STEP;
+    % open the writer
+    open(writerObj);
+end
 
 % show computed trajs
 plotComputedTrajs;
 visualize_init;
 while t_simulation(STEP) < t_simulation(end)
+
+    % ending condition on estimate variation
+    if STEP > 1 && TRANSMITTER_ESTIMATE_VARIATION(end) < ESTIMATE_VARIATION_THRESHOLD
+        break;
+    end
 
     % augment simulation-data list
     INTER_DISTANCES = [INTER_DISTANCES;zeros(1,NUM_DIST)];
@@ -168,7 +183,7 @@ while t_simulation(STEP) < t_simulation(end)
 %         set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
 %     end
 
-    % Event-Triggered replanning
+    % event-Triggered replanning
     if  NLP_PLANNING && t_replanning <= 0
         ESTIMATE_ERROR = norm(transmitter_pos_hat-last_replanning_transmitter_pos_hat);
         OPI = OI_function(recievers_pos_ode_history(:,:,1:2));
@@ -196,6 +211,7 @@ while t_simulation(STEP) < t_simulation(end)
 
     % extract transmitter position estimate
     M_hat = [X_hat(1) X_hat(2) X_hat(3);X_hat(2) X_hat(4) X_hat(5); X_hat(3) X_hat(5) X_hat(6)];
+    old_transmitter_pos_hat = transmitter_pos_hat;
     transmitter_pos_hat = (inv(M_hat)*X_hat(7:9).').'; % new transmitter estimate
 
     % set current reference point for UAVS
@@ -235,6 +251,17 @@ while t_simulation(STEP) < t_simulation(end)
     % update states history
     recievers_pos_ode_history(STEP,:,:) = recievers_pos_ode;
 
+    % update Observability index value
+    my_temp = H_function(recievers_pos);
+    my_temp = my_temp*my_temp.';
+    last_matrix_sum = last_matrix_sum + (my_temp - last_matrix_sum)/STEP;
+    new_OI = sqrt(svds(last_matrix_sum,1,"smallestnz"));
+    OI_VAL = [OI_VAL new_OI];
+
+    % update estimate variation
+    my2_temp = norm(transmitter_pos_hat(1:2)-old_transmitter_pos_hat(1:2));
+    TRANSMITTER_ESTIMATE_VARIATION = [TRANSMITTER_ESTIMATE_VARIATION my2_temp];
+
     % visualize step
     pause(TIME_STEP);
     visualize_update;
@@ -243,12 +270,14 @@ end
 
 hold off;
 
-% stop and save video recorded
-if ~exist('./Movies', 'dir')
-       mkdir('./Movies')
+if RECORD_VIDEO
+    % stop and save video recorded
+    if ~exist('./Movies', 'dir')
+           mkdir('./Movies')
+    end
+    close(writerObj);
+    movefile(vid_name+".mp4",'./Movies/.');
 end
-close(writerObj);
-movefile(vid_name+".mp4",'./Movies/.');
 
 %% PLOTS
 
@@ -259,9 +288,10 @@ title("UAVs inter distances");
 xlabel("time [s]");
 ylabel("distance [m]");
 for i = 1:NUM_DIST
-    plot(t_simulation,INTER_DISTANCES(:,i),"LineWidth",2.0);
+    plot(t_simulation(1:STEP),INTER_DISTANCES(:,i),"LineWidth",2.0);
 end
-plot(t_simulation,repmat(d_safe,length(t_simulation),1),"--","Color","Black","LineWidth",1.5);
+plot(t_simulation(1:STEP),repmat(d_safe,STEP,1),"--","Color","Black","LineWidth",1.5);
+legend("1-2","1-3","2-3");
 hold off;
 
 % plot UAVs velocities
@@ -271,9 +301,27 @@ title("UAVs velocities");
 xlabel("time [s]");
 ylabel("velocity [m/s]");
 for i = 1:N
-    plot(t_simulation,VELOCITIES(:,i),"LineWidth",2.0,"Color",color_list(i));
+    plot(t_simulation(1:STEP),VELOCITIES(:,i),"LineWidth",2.0,"Color",color_list(i));
 end
-plot(t_simulation,repmat(v_max,length(t_simulation),1),"--","Color","Black","LineWidth",1.5);
+plot(t_simulation(1:STEP),repmat(v_max,STEP,1),"--","Color","Black","LineWidth",1.5);
+hold off;
+
+% plot observability index
+figure(4);
+grid on; hold on;
+title("Observability index");
+xlabel("time [s]");
+plot(t_simulation(1:STEP),OI_VAL,"Color","Black","LineWidth",1.5);
+plot(t_simulation(1:STEP),repmat(SIGMA_TRESHOLD,STEP,1),"--","Color","Black","LineWidth",1.5);
+hold off;
+
+% plot transmitter position estimate variation
+figure(5);
+grid on; hold on;
+title("Transmitter position estimate variation")
+xlabel("time [s]");
+ylabel("[m]");
+plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_VARIATION,"Color","Black","LineWidth",1.5);
 hold off;
 
 

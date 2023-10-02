@@ -1,11 +1,7 @@
 %% Update plot
 
 % update estimated transmitter positon
-
 set(VIZ_t_p_h,'XData',transmitter_pos_hat(1),'YData',transmitter_pos_hat(2));
-
-% update visual timer
-set(VIZ_TIMER,"String","Simulation time: "+string(t_simulation(STEP))+" s");
 
 % update UAVs trajectories plot
 for i=1:N
@@ -16,9 +12,20 @@ for i=1:N
     VIZ_trajs{2*i}.YData = temp(end,2);
 end
 
+% update visual timer
+set(VIZ_TIMER,"String","Simulation time: "+string(t_simulation(STEP))+" s");
+
+% update observability index
+set(VIZ_OI,"String","Observability index: "+string(OI_VAL(end)));
+
+% update transmitter position estimate variation
+set(VIZ_TEV,"String","Transmitter estimate variation: "+string(TRANSMITTER_ESTIMATE_VARIATION(end)));
+
 % trigger update
 drawnow;
 
-% capture the current frame
-frame = getframe(gcf); 
-writeVideo(writerObj, frame);
+if RECORD_VIDEO
+    % capture the current frame
+    frame = getframe(gcf); 
+    writeVideo(writerObj, frame);
+end

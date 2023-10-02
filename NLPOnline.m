@@ -34,7 +34,7 @@ for i=1:N
         end
     end
 %     i_th_final = recievers_pos(i,1:2) + (1-(2*d_safe/norm(i_th_final_direction)))*i_th_final_direction;
-    i_th_final = i_th_final_direction;
+    i_th_final = recievers_pos(i,1:2) + i_th_final_direction;
     % check if found final point is within the final area around the
     % estimate
     critical_direction = i_th_final-transmitter_pos_hat(1:2);
