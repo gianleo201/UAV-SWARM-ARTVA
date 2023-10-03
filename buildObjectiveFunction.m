@@ -9,6 +9,10 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
 %         display(t_f);
         Bns = reshape(x(2:end),[NUM_AGENTS, 2, N_approx_bernstain+1]);
 
+%         % debug
+%         ComputeTrajs;
+%         DEBUG_plotTraj;
+
         % minimize mission time
         out_val = W(1) * t_f;
         

@@ -1,4 +1,5 @@
-% build constraints
+%% BUILD CONSTRAINTS
+
 CNSTR = buildConstraints(TIME_STEP, ...
                          N, ...
                          N_approx_bernstain, ...
@@ -8,41 +9,70 @@ CNSTR = buildConstraints(TIME_STEP, ...
                          d_safe, ...
                          v_max);
 
-% build initial conditions
+%% BUILD INITIAL CONDITIONS
+
 NLP_Bns_X0 = zeros(N,2,N_approx_bernstain+1);
 NLP_tf_X0 = t_f;
+% subdivide transmitter estimate position surrounding area in circular
+% sectors
 DELTA_angle = 2*pi/N;
+available_sectors = zeros(1,N);
+for i = 1:N
+    available_sectors(i) = i;
+end
+
 for i=1:N
+    
+    % initial position = UAV position
+    NLP_Bns_X0(i,:,1) = recievers_pos_ode(i,1:2).'; 
 
-    NLP_Bns_X0(i,:,1) = recievers_pos_ode(i,1:2).'; % initial position = UAV position
-
+    % initial velocity = UAV velocity
     NLP_Bns_X0(i,:,2) = NLP_Bns_X0(i,:,1).' + ...
-            (NLP_tf_X0/N_approx_bernstain) * recievers_pos_ode(i,3:4).'; % initial velocity = UAV velocity
+            (NLP_tf_X0/N_approx_bernstain) * recievers_pos_ode(i,3:4).'; 
 
-    % reach surround the area of the estimated transmitted position
-%     i_th_angle = (i-1)*DELTA_angle;
-%     i_th_final = transmitter_pos_hat(1:2)+0.9*d_t*[cos(i_th_angle) sin(i_th_angle)];
-%     NLP_Bns_X0(i,:,N_approx_bernstain+1) = i_th_final.'; % final position =  transmitter estimate
-
-    i_th_final_direction = transmitter_pos_hat(1:2)-recievers_pos(i,1:2);
-    r_safe = sqrt(d_safe/(2*(1-cos(DELTA_angle)))); % cannot enter in a circle area of radius r_safe in order to respect collision avoidance constriant
-    i_th_final_direction = i_th_final_direction*(1-(r_safe/norm(i_th_final_direction)));
-    for j=1:N
-        if j ~= i
-            collision_direction = recievers_pos(j,1:2)-recievers_pos(i,1:2);
-            i_th_final_direction = i_th_final_direction - (collision_direction/(collision_direction*collision_direction.'));
+    % reach the area of the estimated transmitted position divided in
+    % sectors (to each drone the nearest sector)
+    r_safe = sqrt( (d_safe^2) / ( 2*(1-cos(DELTA_angle)) ) ); % cannot enter in a circle area of radius r_safe in order to respect collision avoidance constriant
+    % find nearest available sector
+    N_sec = count_available_sectors(available_sectors);
+    distances_to_sectors = zeros(1,N_sec);
+    index_list = zeros(1,N_sec);
+    k_sec = 1;
+    for j=1:length(available_sectors)
+        if available_sectors(j) ~= 0
+            i_th_angle = (j-1)*DELTA_angle;
+            distances_to_sectors(k_sec) = norm(transmitter_pos_hat(1:2)+1.25*r_safe*[cos(i_th_angle) sin(i_th_angle)]-recievers_pos(i,1:2));
+            index_list(k_sec) = j;
+            k_sec = k_sec + 1;
         end
     end
-%     i_th_final = recievers_pos(i,1:2) + (1-(2*d_safe/norm(i_th_final_direction)))*i_th_final_direction;
-    i_th_final = recievers_pos(i,1:2) + i_th_final_direction;
-    % check if found final point is within the final area around the
-    % estimate
-    critical_direction = i_th_final-transmitter_pos_hat(1:2);
-    if norm(critical_direction) > d_t
-        % if not inside the area move inside it along the radius
-        i_th_final = i_th_final-(1-(d_t/norm(critical_direction)))*critical_direction(1:2);
-    end
-    NLP_Bns_X0(i,:,N_approx_bernstain+1) = i_th_final.';
+    [~, target_sector] = min(distances_to_sectors);
+    available_sectors(index_list(target_sector)) = 0; % no more available sector
+    i_th_angle = index_list(target_sector)*DELTA_angle;
+    i_th_final = transmitter_pos_hat(1:2)+1.25*r_safe*[cos(i_th_angle) sin(i_th_angle)];
+    NLP_Bns_X0(i,:,N_approx_bernstain+1) = i_th_final.'; % final position =  transmitter estimate
+
+%     % reach the area but stay away from other drones
+%     i_th_final_direction = transmitter_pos_hat(1:2)-recievers_pos(i,1:2);
+%     r_safe = sqrt( (d_safe^2) / ( 2*(1-cos(DELTA_angle)) ) ); % cannot enter in a circle area of radius r_safe in order to respect collision avoidance constriant
+%     i_th_final_direction = i_th_final_direction*(1-(r_safe/norm(i_th_final_direction)));
+%     for j=1:N
+%         if j ~= i
+%             collision_direction = recievers_pos(j,1:2)-recievers_pos(i,1:2);
+%             i_th_final_direction = i_th_final_direction - (collision_direction/(collision_direction*collision_direction.'));
+%         end
+%     end
+%     i_th_final = recievers_pos(i,1:2) + i_th_final_direction;
+%     % check if found final point is within the final area around the
+%     % estimate
+%     critical_direction = i_th_final-transmitter_pos_hat(1:2);
+%     if norm(critical_direction) > d_t
+%         % if not inside the area move inside it along the radius
+%         fprintf("A trajectory with a too far ending point has been computed. Rejecting it near the estimate transmitter position ...\n");
+%         i_th_final = i_th_final-(1-(d_t/norm(critical_direction)))*critical_direction(1:2);
+%     end
+%     NLP_Bns_X0(i,:,N_approx_bernstain+1) = i_th_final.';
+    
     
     % assign remaining points to a straight trejectory
     temp_traj = i_th_final-recievers_pos_ode(i,1:2);
@@ -50,6 +80,8 @@ for i=1:N
         NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-1))*temp_traj;
     end
 
+%     % assign remaining points to a straight trejectory with 0 final
+%     % velocity
 %     NLP_Bns_X0(i,:,N_approx_bernstain) = NLP_Bns_X0(i,:,N_approx_bernstain+1); % final velocity = 0
 %     temp_traj = i_th_final-recievers_pos_ode(i,1:2);
 %     for kth=3:N_approx_bernstain-1
@@ -67,7 +99,8 @@ plotComputedTrajs;
 problem.x0 = [NLP_tf_X0 reshape(NLP_Bns_X0,1,[])];
 problem.nonlcon = CNSTR;
 
-% solve NLP
+%% NLP
+
 [x_opt,f_opt] = fmincon(problem);
 
 % save results
@@ -76,3 +109,14 @@ Bns = reshape(x_opt(2:end),N,2,N_approx_bernstain+1);
 
 % explicit computation of the trajecrtory points
 ComputeTrajs;
+
+%% AUXILIARY FUNCTIONS
+
+function n_free_sectors = count_available_sectors(vec)
+    n_free_sectors = length(vec);
+    for i=1:length(vec)
+        if vec(i) == 0
+            n_free_sectors = n_free_sectors - 1;
+        end
+    end
+end

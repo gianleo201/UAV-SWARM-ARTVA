@@ -15,16 +15,16 @@ for i=1:N
 end
 
 % time label
-VIZ_TIMER = text(-15,15,"Simulation time: "+string(t_simulation(STEP))+" s");
+VIZ_TIMER = text(-15,14.5,"Simulation time: "+string(t_simulation(STEP))+" s");
 
 % estimated mission time
-VIZ_END_MISSION_TIME = text(-15,13.5,"Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
+VIZ_END_MISSION_TIME = text(-15,13,"Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
 
 % observability index
-VIZ_OI = text(-15,12,"Observability index: "+string(OI_VAL(end)));
+VIZ_OI = text(-15,11.5,"Observability index: "+string(OI_VAL(end)));
 
 % transmitter position estimate variation
-VIZ_TEV = text(-15,10.5,"Transmitter estimate variation: "+string(TRANSMITTER_ESTIMATE_VARIATION(end)));
+VIZ_TEV = text(-15,10,"Transmitter estimate variation: "+string(TRANSMITTER_ESTIMATE_VARIATION(end)));
 
 if RECORD_VIDEO
     % capture the current frame

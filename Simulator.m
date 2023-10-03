@@ -76,18 +76,18 @@ problem.objective = OF;
 problem.solver = 'fmincon';
 problem.options = optimoptions('fmincon', ...
                 'Display','iter-detailed', ...
-                'OptimalityTolerance',0.7);
+                'OptimalityTolerance',0.5);
 
 if NLP_PLANNING
     NLPOnline; % solve NLP
 else
-    L_t = (((1+sqrt(2))/4)*hl_length);
+    L_t = 0.5*hl_length;
     et = 1.5*( L_t /v_max);
     trap_num_samples = fix( et / TIME_STEP ) + 1;
     UAV_trajs = zeros(N,trap_num_samples,4);
     for i=1:N
 %         reciever_END = reciever_INIT(i,1:2) + hl_length * [0 1];
-        reciever_END = reciever_INIT(i,1:2) + ((1+sqrt(2))/4)*hl_length * [cos((i-0.5)*angle_sector) sin((i-0.5)*angle_sector)];
+        reciever_END = reciever_INIT(i,1:2) + L_t * [cos((i-0.5)*angle_sector) sin((i-0.5)*angle_sector)];
         UAV_path_dir = reciever_END-reciever_INIT(i,1:2);
         UAV_path_dir = UAV_path_dir/norm(UAV_path_dir);
         
