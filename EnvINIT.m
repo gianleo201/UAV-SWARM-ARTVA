@@ -1,6 +1,7 @@
 %% EXECUTION FLAGS
 
-NLP_PLANNING = true;
+NLP_PLANNING = false;
+DOUBLE_PHASE = true;
 RECORD_VIDEO = false;
 
 %% ENVIRONMENT INITIALIZATION
@@ -8,6 +9,9 @@ RECORD_VIDEO = false;
 % set transimetter initial position
 % orientation is not of interest, imagine the transmitter frame parallel to the inertial one
 transmitter_real_pos = [-5 5 0];
+
+% initial guess for the transmitter
+transmitter_pos_hat = [0 0 0];
 
 % set up number of reciever agent
 N = 4;
@@ -28,28 +32,28 @@ reciever_INIT = zeros(N,3); %2-dimensional environment. 3d component is always 0
 % reciever_INIT(4,1:2) = [0 -10];
 % reciever_INIT(5,1:2) = [7.071 -7.071];
 
-% % horizontal spawn
+% % horizontal spawn ( vertical exploration )
 % hl_length = 20; % [m]
 % rs_dist = hl_length/N; % [m]
 % for i=1:N
-%     reciever_INIT(i,1:2) = [transmitter_real_pos(1)-(hl_length/2)+(i-0.5)*rs_dist ...
-%                             transmitter_real_pos(2)-(hl_length/2)];
+%     reciever_INIT(i,1:2) = [transmitter_pos_hat(1)-(hl_length/2)+(i-0.5)*rs_dist ...
+%                             transmitter_pos_hat(2)-(hl_length/2)];
 % end
 
-% % vertical spawn
-% hl_length = 20; % [m]
+% % vertical spawn ( horizontal exploration )
+% hl_length = 15; % [m]
 % rs_dist = hl_length/N; % [m]
 % for i=1:N
-%     reciever_INIT(i,1:2) = [transmitter_real_pos(1)-(hl_length/2) ...
-%                             transmitter_real_pos(2)-(hl_length/2)+(i-0.5)*rs_dist];
+%     reciever_INIT(i,1:2) = [transmitter_pos_hat(1)-(hl_length/2) ...
+%                             transmitter_pos_hat(2)-(hl_length/2)+(i-0.5)*rs_dist];
 % end
 
 % radial spawn
 hl_length = 20; % [m]
 angle_sector = (pi/2)/N; % [rad]
 for i=1:N
-    reciever_INIT(i,1:2) = [transmitter_real_pos(1)-(hl_length/2)+(hl_length/4)*cos((i-0.5)*angle_sector)
-                            transmitter_real_pos(2)-(hl_length/2)+(hl_length/4)*sin((i-0.5)*angle_sector)];
+    reciever_INIT(i,1:2) = [transmitter_pos_hat(1)-(hl_length/2)+(hl_length/4)*cos((i-0.5)*angle_sector)
+                            transmitter_pos_hat(2)-(hl_length/2)+(hl_length/4)*sin((i-0.5)*angle_sector)];
 end
 rs_dist = sqrt( 2*(hl_length/4)^2*(1-cos(angle_sector)) );
 

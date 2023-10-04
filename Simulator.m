@@ -23,8 +23,8 @@ temp_K = cell(N,1);
 for i=1:N
     temp_A{i} = generic_A_matrix;
     temp_B{i} = generic_B_matrix;
-    temp_K{i} = [5 0 10  0;
-                 0 5  0 10]; % control gains
+    temp_K{i} = [5 0 20  0;
+                 0 5  0 20]; % control gains
 end
 
 total_A_matrix = blkdiag(temp_A{:});
@@ -49,7 +49,7 @@ M_real = diag([b^2 a^2 a^2]);
 beta_ff = 0.95; % forgetly factor
 % RLS algorithm initialization
 S_RLS = diag(repmat(10,1,10)); % initial covariance matrix
-transmitter_pos_hat = [2 -2 0]; % initial guess for the transmitter
+% transmitter_pos_hat = [0 0 0]; % initial guess for the transmitter
 last_replanning_transmitter_pos_hat = transmitter_pos_hat; % keep memory at each replanning
 M_hat = [1   0      0;
          0     2    0;
@@ -61,17 +61,18 @@ X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
 
 
 % set NLP
-t_f = 30; % sec  ( first estimated mission time )
-d_t = 5;
+t_f = 30; % [s]  ( first estimated mission time )
+d_t = 5; % [m]
 if ~exist('rs_dist','var')
-    d_safe = 2;
+    d_safe = 3;
 else
     d_safe = rs_dist*0.75;
     fprintf("Security distance among UAVs set to: %d\n",d_safe);
 end
-v_max = 5;
-ObgectiveWeights = [1 0.1 20];
-OF = buildObjectiveFunction(ObgectiveWeights,N,TIME_STEP,N_approx_bernstain);
+v_max = 5; % [m/s]
+% ObjectiveWeights = [1 0.05 10];
+ObjectiveWeights = [1 0.1 10];
+OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
 problem.solver = 'fmincon';
 problem.options = optimoptions('fmincon', ...
@@ -81,29 +82,44 @@ problem.options = optimoptions('fmincon', ...
 if NLP_PLANNING
     NLPOnline; % solve NLP
 else
-    L_t = 0.5*hl_length;
-    et = 1.5*( L_t /v_max);
+    L_t = 0.75*hl_length; % for radial exploration
+%     L_t = hl_length; % for v-h exploration
+    et = 2*( L_t /(0.5*v_max)); % cruise velocity at 50%
     trap_num_samples = fix( et / TIME_STEP ) + 1;
     UAV_trajs = zeros(N,trap_num_samples,4);
     for i=1:N
-%         reciever_END = reciever_INIT(i,1:2) + hl_length * [0 1];
-        reciever_END = reciever_INIT(i,1:2) + L_t * [cos((i-0.5)*angle_sector) sin((i-0.5)*angle_sector)];
+        reciever_END = reciever_INIT(i,1:2) + L_t * [cos((i-0.5)*angle_sector) sin((i-0.5)*angle_sector)]; % for radial exploration
+%         reciever_END = reciever_INIT(i,1:2) + hl_length * [0 1]; % for vertical exploration
+%         reciever_END = reciever_INIT(i,1:2) + hl_length * [1 0]; % for horizontal exploration
+        
+        % extract linear path direction
         UAV_path_dir = reciever_END-reciever_INIT(i,1:2);
         UAV_path_dir = UAV_path_dir/norm(UAV_path_dir);
         
+        % compute straight path trapezoidal trajectories
         [q, qd, ~, tSamples, ~] = trapveltraj( ...
             [ 0 L_t ], ...
             trap_num_samples, ...
-            "PeakVelocity",v_max, ...
+            "PeakVelocity",0.5*v_max, ...
             "EndTime",et);
         UAV_trajs(i,:,1:2) = repmat(reciever_INIT(i,1:2),trap_num_samples,1)+[UAV_path_dir(1)*q.' UAV_path_dir(2)*q.'];
         UAV_trajs(i,:,3:4) = [UAV_path_dir(1)*qd.' UAV_path_dir(2)*qd.'];
     end
 end
 
+% % plot ex
+% plot(15);
+% grid on; hold on;
+% szz = size(UAV_trajs);
+% vls = zeros(1,szz(2));
+% for i=1:length(vls)
+%     vls(i) = norm(squeeze(UAV_trajs(1,i,3:4)));
+% end
+% plot(tSamples,vls);
+% hold off;
 
 % event-triggered replanning thresholds
-t_replanning = 8; % replanning timer [s]
+t_replanning = 10; % replanning timer [s]
 RHO_THRESHOLD = 2;
 SIGMA_TRESHOLD = 0.7;
 
@@ -135,7 +151,7 @@ OI_VAL = [my_temp];
 
 % estimate variation
 TRANSMITTER_ESTIMATE_VARIATION = [0];
-ESTIMATE_VARIATION_THRESHOLD = 1e-06;
+ESTIMATE_VARIATION_THRESHOLD = 1e-04;
 
 
 %% MAINLOOP EXECUTION
@@ -184,9 +200,9 @@ while t_simulation(STEP) < t_simulation(end)
 %     end
 
     % event-Triggered replanning
-    if  NLP_PLANNING && t_replanning <= 0
+    if  (NLP_PLANNING || DOUBLE_PHASE) && t_replanning <= 0
         ESTIMATE_ERROR = norm(transmitter_pos_hat-last_replanning_transmitter_pos_hat);
-        OPI = OI_function(recievers_pos_ode_history(:,:,1:2));
+        OPI = OI_function(recievers_pos_ode_history(1:STEP,:,1:2));
         if  ESTIMATE_ERROR > RHO_THRESHOLD || ...
             OPI <= SIGMA_TRESHOLD
 
@@ -287,8 +303,9 @@ grid on; hold on;
 title("UAVs inter distances");
 xlabel("time [s]");
 ylabel("distance [m]");
+xlim([0 TIME_STEP*STEP]);
 for i = 1:NUM_DIST
-    plot(t_simulation(1:STEP),INTER_DISTANCES(:,i),"LineWidth",2.0);
+    plot(t_simulation(1:STEP),INTER_DISTANCES(1:STEP,i),"LineWidth",2.0);
 end
 plot(t_simulation(1:STEP),repmat(d_safe,STEP,1),"--","Color","Black","LineWidth",1.5);
 legend("1-2","1-3","2-3");
@@ -299,9 +316,10 @@ figure(3);
 grid on; hold on;
 title("UAVs velocities");
 xlabel("time [s]");
+xlim([0 TIME_STEP*STEP]);
 ylabel("velocity [m/s]");
 for i = 1:N
-    plot(t_simulation(1:STEP),VELOCITIES(:,i),"LineWidth",2.0,"Color",color_list(i));
+    plot(t_simulation(1:STEP),VELOCITIES(1:STEP,i),"LineWidth",2.0,"Color",color_list(i));
 end
 plot(t_simulation(1:STEP),repmat(v_max,STEP,1),"--","Color","Black","LineWidth",1.5);
 hold off;
@@ -311,6 +329,7 @@ figure(4);
 grid on; hold on;
 title("Observability index");
 xlabel("time [s]");
+xlim([0 TIME_STEP*STEP]);
 plot(t_simulation(1:STEP),OI_VAL,"Color","Black","LineWidth",1.5);
 plot(t_simulation(1:STEP),repmat(SIGMA_TRESHOLD,STEP,1),"--","Color","Black","LineWidth",1.5);
 hold off;
@@ -321,6 +340,7 @@ grid on; hold on;
 title("Transmitter position estimate variation")
 xlabel("time [s]");
 ylabel("[m]");
+xlim([0 TIME_STEP*STEP]);
 plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_VARIATION,"Color","Black","LineWidth",1.5);
 hold off;
 
