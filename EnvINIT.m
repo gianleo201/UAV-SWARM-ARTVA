@@ -1,7 +1,7 @@
 %% EXECUTION FLAGS
 
-NLP_PLANNING = false;
-DOUBLE_PHASE = true;
+NLP_PLANNING = true;
+DOUBLE_PHASE = false;
 RECORD_VIDEO = false;
 
 %% ENVIRONMENT INITIALIZATION
@@ -32,13 +32,13 @@ reciever_INIT = zeros(N,3); %2-dimensional environment. 3d component is always 0
 % reciever_INIT(4,1:2) = [0 -10];
 % reciever_INIT(5,1:2) = [7.071 -7.071];
 
-% % horizontal spawn ( vertical exploration )
-% hl_length = 20; % [m]
-% rs_dist = hl_length/N; % [m]
-% for i=1:N
-%     reciever_INIT(i,1:2) = [transmitter_pos_hat(1)-(hl_length/2)+(i-0.5)*rs_dist ...
-%                             transmitter_pos_hat(2)-(hl_length/2)];
-% end
+% horizontal spawn ( vertical exploration )
+hl_length = 20; % [m]
+rs_dist = hl_length/N; % [m]
+for i=1:N
+    reciever_INIT(i,1:2) = [transmitter_pos_hat(1)-(hl_length/2)+(i-0.5)*rs_dist ...
+                            transmitter_pos_hat(2)-(hl_length/2)];
+end
 
 % % vertical spawn ( horizontal exploration )
 % hl_length = 15; % [m]
@@ -48,14 +48,14 @@ reciever_INIT = zeros(N,3); %2-dimensional environment. 3d component is always 0
 %                             transmitter_pos_hat(2)-(hl_length/2)+(i-0.5)*rs_dist];
 % end
 
-% radial spawn
-hl_length = 20; % [m]
-angle_sector = (pi/2)/N; % [rad]
-for i=1:N
-    reciever_INIT(i,1:2) = [transmitter_pos_hat(1)-(hl_length/2)+(hl_length/4)*cos((i-0.5)*angle_sector)
-                            transmitter_pos_hat(2)-(hl_length/2)+(hl_length/4)*sin((i-0.5)*angle_sector)];
-end
-rs_dist = sqrt( 2*(hl_length/4)^2*(1-cos(angle_sector)) );
+% % radial spawn
+% hl_length = 20; % [m]
+% angle_sector = (pi/2)/N; % [rad]
+% for i=1:N
+%     reciever_INIT(i,1:2) = [transmitter_pos_hat(1)-(hl_length/2)+(hl_length/4)*cos((i-0.5)*angle_sector)
+%                             transmitter_pos_hat(2)-(hl_length/2)+(hl_length/4)*sin((i-0.5)*angle_sector)];
+% end
+% rs_dist = sqrt( 2*(hl_length/4)^2*(1-cos(angle_sector)) );
 
 % simulation time
 END_TIME = 30; % secs 2 mins of simulation

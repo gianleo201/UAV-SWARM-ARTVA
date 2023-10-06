@@ -1,6 +1,6 @@
 %% BUILD CONSTRAINTS
 
-function resFunction = buildConstraints(TIME_STEP, NUM_AGENTS, N_approx_bernstain, p_r0, p_t_hat, d_t, d_safe, v_max)
+function resFunction = buildConstraints(MIN_T0, NUM_AGENTS, N_approx_bernstain, p_r0, p_t_hat, d_t, d_safe, v_max)
     function [c, ceq] = constriants(x)
         
         % reshape input in tensor form

@@ -39,11 +39,9 @@ recievers_pos_ode = [reciever_INIT(:,1:2) zeros(N,2)];
 recievers_pos_ode_history = zeros(END_TIME/TIME_STEP,N,4);
 recievers_pos_ode_history(1,:,:) = recievers_pos_ode;
 
-
 a = 1;
 b = 2;
 M_real = diag([b^2 a^2 a^2]);
-
 
 % RLS algorithm setup
 beta_ff = 0.95; % forgetly factor
@@ -70,7 +68,7 @@ else
     fprintf("Security distance among UAVs set to: %d\n",d_safe);
 end
 v_max = 5; % [m/s]
-% ObjectiveWeights = [1 0.05 10];
+% ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
 ObjectiveWeights = [1 0.1 10];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
@@ -82,14 +80,14 @@ problem.options = optimoptions('fmincon', ...
 if NLP_PLANNING
     NLPOnline; % solve NLP
 else
-    L_t = 0.75*hl_length; % for radial exploration
-%     L_t = hl_length; % for v-h exploration
+%     L_t = 0.75*hl_length; % for radial exploration
+    L_t = hl_length; % for v-h exploration
     et = 2*( L_t /(0.5*v_max)); % cruise velocity at 50%
     trap_num_samples = fix( et / TIME_STEP ) + 1;
     UAV_trajs = zeros(N,trap_num_samples,4);
     for i=1:N
-        reciever_END = reciever_INIT(i,1:2) + L_t * [cos((i-0.5)*angle_sector) sin((i-0.5)*angle_sector)]; % for radial exploration
-%         reciever_END = reciever_INIT(i,1:2) + hl_length * [0 1]; % for vertical exploration
+%         reciever_END = reciever_INIT(i,1:2) + L_t * [cos((i-0.5)*angle_sector) sin((i-0.5)*angle_sector)]; % for radial exploration
+        reciever_END = reciever_INIT(i,1:2) + hl_length * [0 1]; % for vertical exploration
 %         reciever_END = reciever_INIT(i,1:2) + hl_length * [1 0]; % for horizontal exploration
         
         % extract linear path direction
@@ -153,6 +151,8 @@ OI_VAL = [my_temp];
 TRANSMITTER_ESTIMATE_VARIATION = [0];
 ESTIMATE_VARIATION_THRESHOLD = 1e-04;
 
+% estimate error
+TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
 
 %% MAINLOOP EXECUTION
 
@@ -277,6 +277,7 @@ while t_simulation(STEP) < t_simulation(end)
     % update estimate variation
     my2_temp = norm(transmitter_pos_hat(1:2)-old_transmitter_pos_hat(1:2));
     TRANSMITTER_ESTIMATE_VARIATION = [TRANSMITTER_ESTIMATE_VARIATION my2_temp];
+    TRANSMITTER_ESTIMATE_ERROR = [TRANSMITTER_ESTIMATE_ERROR norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
 
     % visualize step
     pause(TIME_STEP);
@@ -286,8 +287,8 @@ end
 
 hold off;
 
+% stop and save video recorded
 if RECORD_VIDEO
-    % stop and save video recorded
     if ~exist('./Movies', 'dir')
            mkdir('./Movies')
     end
@@ -297,8 +298,12 @@ end
 
 %% PLOTS
 
+if ~exist("tmp_dir","dir")
+    mkdir . tmp_dir;
+end
+
 % plot inter distances
-figure(2);
+fig2 = figure(2);
 grid on; hold on;
 title("UAVs inter distances");
 xlabel("time [s]");
@@ -310,9 +315,12 @@ end
 plot(t_simulation(1:STEP),repmat(d_safe,STEP,1),"--","Color","Black","LineWidth",1.5);
 legend("1-2","1-3","2-3");
 hold off;
+saveas(fig2,'./tmp_dir/inter_distances.png');
+saveas(fig2,'./tmp_dir/inter_distances.fig');
+saveas(fig2,'./tmp_dir/inter_distances','epsc');
 
 % plot UAVs velocities
-figure(3);
+fig3 = figure(3);
 grid on; hold on;
 title("UAVs velocities");
 xlabel("time [s]");
@@ -323,9 +331,12 @@ for i = 1:N
 end
 plot(t_simulation(1:STEP),repmat(v_max,STEP,1),"--","Color","Black","LineWidth",1.5);
 hold off;
+saveas(fig3,'./tmp_dir/VELS.png');
+saveas(fig3,'./tmp_dir/VELS.fig');
+saveas(fig3,'./tmp_dir/VELS','epsc');
 
 % plot observability index
-figure(4);
+fig4 = figure(4);
 grid on; hold on;
 title("Observability index");
 xlabel("time [s]");
@@ -333,9 +344,13 @@ xlim([0 TIME_STEP*STEP]);
 plot(t_simulation(1:STEP),OI_VAL,"Color","Black","LineWidth",1.5);
 plot(t_simulation(1:STEP),repmat(SIGMA_TRESHOLD,STEP,1),"--","Color","Black","LineWidth",1.5);
 hold off;
+save SIGMA_TRESHOLD.mat SIGMA_TRESHOLD;
+saveas(fig4,'./tmp_dir/OI.png');
+saveas(fig4,'./tmp_dir/OI.fig');
+saveas(fig4,'./tmp_dir/OI','epsc');
 
 % plot transmitter position estimate variation
-figure(5);
+fig5 = figure(5);
 grid on; hold on;
 title("Transmitter position estimate variation")
 xlabel("time [s]");
@@ -343,6 +358,24 @@ ylabel("[m]");
 xlim([0 TIME_STEP*STEP]);
 plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_VARIATION,"Color","Black","LineWidth",1.5);
 hold off;
+saveas(fig5,'./tmp_dir/TEV.png');
+saveas(fig5,'./tmp_dir/TEV.fig');
+saveas(fig5,'./tmp_dir/TEV','epsc');
+
+% plot transmitter position estimate error
+fig6 = figure(6);
+grid on; hold on;
+title("Transmitter position estimate error");
+xlabel("time [s]");
+ylabel("[m]");
+xlim([0 TIME_STEP*STEP]);
+ylim([0 5]);
+plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_ERROR,"Color","Black","LineWidth",1.5);
+hold off;
+save TRANSMITTER_ESTIMATE_ERROR.mat TRANSMITTER_ESTIMATE_ERROR;
+saveas(fig6,'./tmp_dir/TEE.png');
+saveas(fig6,'./tmp_dir/TEE.fig');
+saveas(fig6,'./tmp_dir/TEE','epsc');
 
 
 %% UAV DYNAMICS ODE

@@ -9,10 +9,6 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
 %         display(t_f);
         Bns = reshape(x(2:end),[NUM_AGENTS, 2, N_approx_bernstain+1]);
 
-%         % debug
-%         ComputeTrajs;
-%         DEBUG_plotTraj;
-
         % minimize mission time
         out_val = W(1) * t_f;
         
@@ -30,7 +26,6 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
             out_val = out_val + W(2) *integral_accsqr_i;
 
         end
-
 
         % build O matrix
         O = zeros(10,10);
@@ -50,7 +45,6 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
         sigma_lower = sqrt(svds(O,1,"smallestnz"));
 %         display(sigma_lower);
         
-    
         % maximize information gain
         out_val = out_val - W(3) * sigma_lower;
 
