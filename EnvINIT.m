@@ -1,9 +1,9 @@
 %% EXECUTION FLAGS
 
 NLP_PLANNING = false;
-DOUBLE_PHASE = false;
+DOUBLE_PHASE = true;
 RECORD_VIDEO = false;
-COMPUTING_DEVICE_DELAY = false;
+COMPUTING_DEVICE_DELAY = true;
 
 %% ENVIRONMENT INITIALIZATION
 
@@ -18,7 +18,7 @@ transmitter_pos_hat = [0 0 0];
 N = 4;
 
 % build up a color list do indetify each UAV
-color_list = ["green","black","yellow","cyan","red"];
+color_list = ["green","blue","yellow","cyan","magenta"];
 
 % degree of approximation of trajectories ( at least 3rd order )
 N_approx_bernstain = 5;

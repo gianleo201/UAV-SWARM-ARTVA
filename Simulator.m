@@ -47,7 +47,7 @@ M_real = diag([b^2 a^2 a^2]);
 beta_ff = 0.95; % forgetly factor
 % RLS algorithm initialization
 % S_RLS = diag(repmat(1,1,10)); % initial covariance matrix
-S_RLS = diag(repmat(100,1,10)); % initial covariance matrix
+S_RLS = diag(repmat(10000,1,10)); % initial covariance matrix
 % transmitter_pos_hat = [0 0 0]; % initial guess for the transmitter
 last_replanning_transmitter_pos_hat = transmitter_pos_hat; % keep memory at each replanning
 M_hat = [1   0      0;
@@ -159,17 +159,25 @@ TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat
 if COMPUTING_DEVICE_DELAY
     NOMINAL_TRANSMISSION_DISTANCE = 10; % [m] is the distance between any UAV and the estimation device such that the nominal transmission time is the sample time
     medium_velocity = 10/TIME_STEP; % [m/s]
-    uncertain_time_range = 5*TIME_STEP; % [s]
+    uncertain_time_range = 0.5*TIME_STEP; % [s]
     estimation_device_pos = [0 -15 0];
     AS = Dispatcher(length(recievers_pos),TIME_STEP,recievers_pos);
 end
 
 % initialize UAV-network system
 network_matrix = [1 1 0 0;
-                  1 1 1 0;
-                  0 1 1 1;
+                  1 1 0 0;
+                  0 0 1 1;
                   0 0 1 1];
-UAV_NET = UAVNetwork(N,TIME_STEP,network_matrix,X_hat,S_RLS);
+UAV_NET = UAVNetwork(N, ...
+                     TIME_STEP, ...
+                     network_matrix, ...
+                     recievers_pos, ...
+                     X_hat, ...
+                     S_RLS, ...
+                     @(x) Y_function(x, ...
+                     transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0) ...
+                     );
 
 % DRLS estimate variation from standard RLS
 NETWORK_ESTIMATES = UAV_NET.pull_estimates();
@@ -224,7 +232,7 @@ while t_simulation(STEP) < t_simulation(end)
 %         set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
 %     end
 
-    % event-Triggered replanning
+    % event-triggered replanning
     if  (NLP_PLANNING || DOUBLE_PHASE) && t_replanning <= 0
         ESTIMATE_ERROR = norm(transmitter_pos_hat-last_replanning_transmitter_pos_hat);
         OPI = OI_function(recievers_pos_ode_history(1:STEP,:,1:2));
@@ -242,22 +250,23 @@ while t_simulation(STEP) < t_simulation(end)
     
     end
     
-    % compute new values ( with async sys measurment )
-    H_num = H_function(recievers_pos);
-    Y_num = Y_function(recievers_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
-    UAV_NET.DRLS(beta_ff,Y_num,H_num);
-
     if COMPUTING_DEVICE_DELAY
-        % compute async system step
+        % compute centralized async system step
         available_pos = AS.pull_latest_info((STEP-1)*TIME_STEP);
     
-        % compute new values ( with async sys measurment )
+        % compute new values ( with async sys measurment ) centralized
         H_num = H_function(available_pos);
         Y_num = Y_function(available_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
+
+        % compute new values decentralized
+        UAV_NET.DRLS(beta_ff,Y_num,H_num,true,(STEP-1)*TIME_STEP);
     else 
-        % compute new values
+        % compute new values centralized
         H_num = H_function(recievers_pos);
         Y_num = Y_function(recievers_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
+
+        % compute new values decentralized
+        UAV_NET.DRLS(beta_ff,Y_num,H_num,false);
     end
 
     % RLS algorithm step
@@ -295,7 +304,7 @@ while t_simulation(STEP) < t_simulation(end)
     t_replanning = t_replanning-TIME_STEP;
 
     if COMPUTING_DEVICE_DELAY
-        % update async system
+        % update centralized async system
         new_info = [recievers_pos zeros(N,1)];
         for i=1:N
             random_alpha = rand(1,1);
@@ -305,6 +314,8 @@ while t_simulation(STEP) < t_simulation(end)
             new_info(i,4) = spawn_time;
         end
         AS.push_info(new_info);
+        % update decentrilized async system
+        UAV_NET.info_transmission(recievers_pos,(STEP-1)*TIME_STEP,medium_velocity,uncertain_time_range);
     end
 
     % compute interdistances

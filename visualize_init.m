@@ -1,16 +1,15 @@
 %% PLOT FRAMES
 
 % real transmitter positon
-plot(transmitter_real_pos(1),transmitter_real_pos(2),'x','Color','black','LineWidth',2,'MarkerSize',15);
-
-% estimated transmitter position
-VIZ_t_p_h = plot(transmitter_pos_hat(1),transmitter_pos_hat(2),'x','Color','red','MarkerSize',8);
+plot(transmitter_real_pos(1),transmitter_real_pos(2),'x','Color','black','LineWidth',4,'MarkerSize',20);
 
 % distributed estimated transmitter position
 VIZ_t_p_h_d = cell(N,1);
 for i = 1 : N
-    VIZ_t_p_h_d{i} = plot(UAV_NET.UAVS{i}.transmitter_pos_hat(1),UAV_NET.UAVS{i}.transmitter_pos_hat(2),'x','Color',color_list(i),'MarkerSize',8);
+    VIZ_t_p_h_d{i} = plot(UAV_NET.UAVS{i}.transmitter_pos_hat(1),UAV_NET.UAVS{i}.transmitter_pos_hat(2),'x','Color',color_list(i),'LineWidth',1.5,'MarkerSize',8);
 end
+% estimated transmitter position
+VIZ_t_p_h = plot(transmitter_pos_hat(1),transmitter_pos_hat(2),'x','Color','red','LineWidth',2.5,'MarkerSize',12);
 
 % UAVS trajectories
 VIZ_trajs = cell(2*N,1);
