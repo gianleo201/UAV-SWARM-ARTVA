@@ -1,8 +1,9 @@
 %% EXECUTION FLAGS
 
-NLP_PLANNING = true;
+NLP_PLANNING = false;
 DOUBLE_PHASE = false;
 RECORD_VIDEO = false;
+COMPUTING_DEVICE_DELAY = false;
 
 %% ENVIRONMENT INITIALIZATION
 
@@ -58,6 +59,6 @@ end
 % rs_dist = sqrt( 2*(hl_length/4)^2*(1-cos(angle_sector)) );
 
 % simulation time
-END_TIME = 30; % secs 2 mins of simulation
+END_TIME = 120; % secs 2 mins of simulation
 TIME_STEP = 0.1; % secs
 t_simulation = 0:TIME_STEP:END_TIME;

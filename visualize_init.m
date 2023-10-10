@@ -6,6 +6,12 @@ plot(transmitter_real_pos(1),transmitter_real_pos(2),'x','Color','black','LineWi
 % estimated transmitter position
 VIZ_t_p_h = plot(transmitter_pos_hat(1),transmitter_pos_hat(2),'x','Color','red','MarkerSize',8);
 
+% distributed estimated transmitter position
+VIZ_t_p_h_d = cell(N,1);
+for i = 1 : N
+    VIZ_t_p_h_d{i} = plot(UAV_NET.UAVS{i}.transmitter_pos_hat(1),UAV_NET.UAVS{i}.transmitter_pos_hat(2),'x','Color',color_list(i),'MarkerSize',8);
+end
+
 % UAVS trajectories
 VIZ_trajs = cell(2*N,1);
 for i=1:N

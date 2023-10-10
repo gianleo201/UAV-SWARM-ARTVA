@@ -8,7 +8,7 @@ function resFunction = buildConstraints(MIN_T0, NUM_AGENTS, N_approx_bernstain, 
         Bns = reshape(x(2:end),[NUM_AGENTS, 2, N_approx_bernstain+1]);
         
         % nonnegative mission time constraint
-        c(1) = -t_f+10;
+        c(1) = -t_f+MIN_T0;
 
         keq = 1;
         k = 2;

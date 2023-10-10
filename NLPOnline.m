@@ -1,7 +1,7 @@
 %% BUILD INITIAL GUESS
 
 NLP_Bns_X0 = zeros(N,2,N_approx_bernstain+1);
-NLP_tf_X0 = t_f;
+% NLP_tf_X0 = t_f;
 
 % subdivide transmitter estimate position surrounding area in circular
 % sectors
@@ -39,6 +39,7 @@ for i=1:N
 end
 
 min_feasable_tf = (2*max_min_dist/v_max) + TIME_STEP;
+NLP_tf_X0 = min_feasable_tf + 10;
 
 for i=1:N
     

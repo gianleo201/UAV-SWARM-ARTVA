@@ -46,7 +46,8 @@ M_real = diag([b^2 a^2 a^2]);
 % RLS algorithm setup
 beta_ff = 0.95; % forgetly factor
 % RLS algorithm initialization
-S_RLS = diag(repmat(10,1,10)); % initial covariance matrix
+% S_RLS = diag(repmat(1,1,10)); % initial covariance matrix
+S_RLS = diag(repmat(100,1,10)); % initial covariance matrix
 % transmitter_pos_hat = [0 0 0]; % initial guess for the transmitter
 last_replanning_transmitter_pos_hat = transmitter_pos_hat; % keep memory at each replanning
 M_hat = [1   0      0;
@@ -69,7 +70,7 @@ else
 end
 v_max = 5; % [m/s]
 % ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
-ObjectiveWeights = [1 0.1 10];
+ObjectiveWeights = [1e-06 0.1 10];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
 problem.solver = 'fmincon';
@@ -154,6 +155,30 @@ ESTIMATE_VARIATION_THRESHOLD = 1e-04;
 % estimate error
 TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
 
+% initialize async-system
+if COMPUTING_DEVICE_DELAY
+    NOMINAL_TRANSMISSION_DISTANCE = 10; % [m] is the distance between any UAV and the estimation device such that the nominal transmission time is the sample time
+    medium_velocity = 10/TIME_STEP; % [m/s]
+    uncertain_time_range = 5*TIME_STEP; % [s]
+    estimation_device_pos = [0 -15 0];
+    AS = Dispatcher(length(recievers_pos),TIME_STEP,recievers_pos);
+end
+
+% initialize UAV-network system
+network_matrix = [1 1 0 0;
+                  1 1 1 0;
+                  0 1 1 1;
+                  0 0 1 1];
+UAV_NET = UAVNetwork(N,TIME_STEP,network_matrix,X_hat,S_RLS);
+
+% DRLS estimate variation from standard RLS
+NETWORK_ESTIMATES = UAV_NET.pull_estimates();
+NETWORK_ESTIMATES_DEV = zeros(1,N);
+for i = 1 : N
+    NETWORK_ESTIMATES_DEV(i) = norm(NETWORK_ESTIMATES(i,1:2)-transmitter_pos_hat(1:2));
+end
+TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [NETWORK_ESTIMATES_DEV];
+
 %% MAINLOOP EXECUTION
 
 STEP = 1;
@@ -214,13 +239,27 @@ while t_simulation(STEP) < t_simulation(end)
             set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
         end
             t_replanning = t_f-TIME_STEP; % reset timer
-    end
-
     
-    % compute new values
+    end
+    
+    % compute new values ( with async sys measurment )
     H_num = H_function(recievers_pos);
     Y_num = Y_function(recievers_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
+    UAV_NET.DRLS(beta_ff,Y_num,H_num);
+
+    if COMPUTING_DEVICE_DELAY
+        % compute async system step
+        available_pos = AS.pull_latest_info((STEP-1)*TIME_STEP);
     
+        % compute new values ( with async sys measurment )
+        H_num = H_function(available_pos);
+        Y_num = Y_function(available_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
+    else 
+        % compute new values
+        H_num = H_function(recievers_pos);
+        Y_num = Y_function(recievers_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
+    end
+
     % RLS algorithm step
     X_hat = ( X_hat.' +  inv(S_RLS)*H_num*(Y_num-H_num.'*X_hat.') ).'; % new estimate of parameters vector;
     S_RLS = beta_ff * S_RLS + H_num*H_num.';
@@ -241,6 +280,7 @@ while t_simulation(STEP) < t_simulation(end)
     else
         UAV_references = reshape(squeeze(UAV_trajs(:,K_STEP,:)).',1,[]).';
     end
+
     % simulate the UAVS
     step_results = ode45( ...
     UAV_TEAM(UAV_references,K_uavs_gain,total_A_matrix,total_B_matrix), ...
@@ -248,6 +288,24 @@ while t_simulation(STEP) < t_simulation(end)
           reshape(recievers_pos_ode.', 1, []));
     recievers_pos_ode = reshape(step_results.y(:,end),4,N).';
     recievers_pos = [ recievers_pos_ode(:,1:2) zeros(N,1)];
+
+    % next step
+    STEP = STEP + 1;
+    K_STEP = K_STEP + 1;
+    t_replanning = t_replanning-TIME_STEP;
+
+    if COMPUTING_DEVICE_DELAY
+        % update async system
+        new_info = [recievers_pos zeros(N,1)];
+        for i=1:N
+            random_alpha = rand(1,1);
+%             delta_spawn_time = ( norm(recievers_pos(i,1:2) - estimation_device_pos(1:2))/medium_velocity ) + (2*random_alpha-1) * uncertain_time_range;
+            delta_spawn_time = ( norm(recievers_pos(i,1:2) - estimation_device_pos(1:2))/medium_velocity ) + random_alpha * uncertain_time_range;
+            spawn_time = (STEP-1)*TIME_STEP + delta_spawn_time;
+            new_info(i,4) = spawn_time;
+        end
+        AS.push_info(new_info);
+    end
 
     % compute interdistances
     k = 1;
@@ -258,12 +316,7 @@ while t_simulation(STEP) < t_simulation(end)
             k = k + 1;
         end
     end
-
-    % prepare next step
-    STEP = STEP + 1;
-    K_STEP = K_STEP + 1;
-    t_replanning = t_replanning-TIME_STEP;
-    
+  
     % update states history
     recievers_pos_ode_history(STEP,:,:) = recievers_pos_ode;
 
@@ -274,10 +327,18 @@ while t_simulation(STEP) < t_simulation(end)
     new_OI = sqrt(svds(last_matrix_sum,1,"smallestnz"));
     OI_VAL = [OI_VAL new_OI];
 
-    % update estimate variation
+    % update estimate error and variation
     my2_temp = norm(transmitter_pos_hat(1:2)-old_transmitter_pos_hat(1:2));
     TRANSMITTER_ESTIMATE_VARIATION = [TRANSMITTER_ESTIMATE_VARIATION my2_temp];
     TRANSMITTER_ESTIMATE_ERROR = [TRANSMITTER_ESTIMATE_ERROR norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
+
+    % update DRLS estimate deviation form standard RLS
+    NETWORK_ESTIMATES = UAV_NET.pull_estimates();
+    NETWORK_ESTIMATES_DEV = zeros(1,N);
+    for i = 1 : N
+        NETWORK_ESTIMATES_DEV(i) = norm(NETWORK_ESTIMATES(i,1:2)-transmitter_pos_hat(1:2));
+    end
+    TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [TRANSMITTER_ESTIMATE_DRLS_DEVIATION;NETWORK_ESTIMATES_DEV];
 
     % visualize step
     pause(TIME_STEP);
@@ -290,7 +351,7 @@ hold off;
 % stop and save video recorded
 if RECORD_VIDEO
     if ~exist('./Movies', 'dir')
-           mkdir('./Movies')
+           mkdir('./Movies');
     end
     close(writerObj);
     movefile(vid_name+".mp4",'./Movies/.');
@@ -372,10 +433,28 @@ xlim([0 TIME_STEP*STEP]);
 ylim([0 5]);
 plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_ERROR,"Color","Black","LineWidth",1.5);
 hold off;
-save TRANSMITTER_ESTIMATE_ERROR.mat TRANSMITTER_ESTIMATE_ERROR;
+if COMPUTING_DEVICE_DELAY
+    save TRANSMITTER_ESTIMATE_ERROR.mat TRANSMITTER_ESTIMATE_ERROR;
+else
+    save TRANSMITTER_ESTIMATE_ERROR_NO_DELAY.mat TRANSMITTER_ESTIMATE_ERROR;
+end
 saveas(fig6,'./tmp_dir/TEE.png');
 saveas(fig6,'./tmp_dir/TEE.fig');
 saveas(fig6,'./tmp_dir/TEE','epsc');
+
+% plot DRLS deviation from standard RLS
+fig7 = figure(7);
+grid on; hold on;
+title("DRLS deviation from centralized RLS");
+xlabel("time [s]");
+ylabel("[m]");
+xlim([0 TIME_STEP*STEP]);
+ylim([0 5]);
+for i = 1 : N
+    plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_DRLS_DEVIATION(:,i).',"Color",color_list(i),"LineWidth",1.5);
+end
+hold off;
+
 
 
 %% UAV DYNAMICS ODE

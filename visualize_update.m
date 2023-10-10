@@ -3,6 +3,11 @@
 % update estimated transmitter positon
 set(VIZ_t_p_h,'XData',transmitter_pos_hat(1),'YData',transmitter_pos_hat(2));
 
+% update distributed estimated transmitter position
+for i = 1 : N
+    set(VIZ_t_p_h_d{i},'XData',UAV_NET.UAVS{i}.transmitter_pos_hat(1),'YData',UAV_NET.UAVS{i}.transmitter_pos_hat(2));
+end
+
 % update UAVs trajectories plot
 for i=1:N
     temp = reshape(recievers_pos_ode_history(1:STEP,i,1:2),STEP,2);
