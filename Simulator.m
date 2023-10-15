@@ -1,3 +1,4 @@
+
 clear;
 EnvINIT; % initialize environment
 MagneticFieldSensors; % build Symbolically H matrix
@@ -44,15 +45,18 @@ b = 2;
 M_real = diag([b^2 a^2 a^2]);
 
 % RLS algorithm setup
-beta_ff = 0.95; % forgetly factor
+beta_ff = 0.9; % forgetly factor
 % RLS algorithm initialization
 % S_RLS = diag(repmat(1,1,10)); % initial covariance matrix
-S_RLS = diag(repmat(10000,1,10)); % initial covariance matrix
+% S_RLS = diag(repmat(1000,1,10)); % initial covariance matrix
+S_RLS = diag([1 1 1 1 1 1 ...
+             (hl_length^2)/12 (hl_length^2)/12 1 ...
+             (hl_length^4)/9]);
 % transmitter_pos_hat = [0 0 0]; % initial guess for the transmitter
 last_replanning_transmitter_pos_hat = transmitter_pos_hat; % keep memory at each replanning
-M_hat = [1   0      0;
-         0     2    0;
-         0     0    2];
+M_hat = [4     0    0;
+         0     1    0;
+         0     0    1];
 % m_11 m_12 m_13 m_22 m_23 m_33 p_t_bar rho
 X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
         (M_hat*transmitter_pos_hat.').' ...
@@ -165,10 +169,11 @@ if COMPUTING_DEVICE_DELAY
 end
 
 % initialize UAV-network system
-network_matrix = [1 1 0 0;
-                  1 1 0 0;
-                  0 0 1 1;
-                  0 0 1 1];
+network_matrix = [1 1 0 0 0;
+                  1 1 1 0 0;
+                  0 1 1 1 0;
+                  0 0 1 1 1;
+                  0 0 0 1 1];
 UAV_NET = UAVNetwork(N, ...
                      TIME_STEP, ...
                      network_matrix, ...
@@ -211,10 +216,10 @@ plotComputedTrajs;
 visualize_init;
 while t_simulation(STEP) < t_simulation(end)
 
-    % ending condition on estimate variation
-    if STEP > 1 && TRANSMITTER_ESTIMATE_VARIATION(end) < ESTIMATE_VARIATION_THRESHOLD
-        break;
-    end
+%     % ending condition on estimate variation
+%     if STEP > 1 && TRANSMITTER_ESTIMATE_VARIATION(end) < ESTIMATE_VARIATION_THRESHOLD
+%         break;
+%     end
 
     % augment simulation-data list
     INTER_DISTANCES = [INTER_DISTANCES;zeros(1,NUM_DIST)];
@@ -269,9 +274,13 @@ while t_simulation(STEP) < t_simulation(end)
         UAV_NET.DRLS(beta_ff,Y_num,H_num,false);
     end
 
+%     % RLS algorithm step
+%     X_hat = ( X_hat.' +  inv(S_RLS)*H_num*(Y_num-H_num.'*X_hat.') ).'; % new estimate of parameters vector;
+%     S_RLS = beta_ff * S_RLS + H_num*H_num.';
+
     % RLS algorithm step
+    S_RLS = beta_ff * inv(S_RLS) + H_num*H_num.';
     X_hat = ( X_hat.' +  inv(S_RLS)*H_num*(Y_num-H_num.'*X_hat.') ).'; % new estimate of parameters vector;
-    S_RLS = beta_ff * S_RLS + H_num*H_num.';
 
     % extract transmitter position estimate
     M_hat = [X_hat(1) X_hat(2) X_hat(3);X_hat(2) X_hat(4) X_hat(5); X_hat(3) X_hat(5) X_hat(6)];

@@ -1,0 +1,6 @@
+function x_k_1 = simulate_UAV(x,u,Ts)
+    step_results = ode45(@(t,x) UAV_dynamics(x,u), ...
+                        [0 Ts], ...
+                        x);
+    x_k_1 = reshape(step_results.y(:,end),[],1);
+end

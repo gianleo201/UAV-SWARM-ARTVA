@@ -103,8 +103,8 @@ for i=1:N
     
 %     if norm(transmitter_pos_hat(1:2)-recievers_pos_ode(i,1:2)) <= d_t
     if true
-        % assign remaining points to a straight trejectory from start to
-        % i_th_final
+%         assign remaining points to a straight trejectory from start to
+%         i_th_final
         temp_traj = i_th_final-recievers_pos_ode(i,1:2);
         for kth=3:N_approx_bernstain
             NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-1))*temp_traj;

@@ -1,4 +1,17 @@
 
+LAST_N = load("LAST_N.mat");
+
+if LAST_N.N == N
+    fprintf("Code already generated for %d UAVs\n",N);
+    return;
+end
+
+save LAST_N.mat N;
+
+clear LAST_N;
+
+%% Symbolic variables
+
 syms a b m real; % magnetic field params
 
 syms p_x p_y p_z real; % position vector where the magnetic field is evaluated
@@ -57,6 +70,7 @@ for i=1:N
     H(:,i) = simplify(H(:,i));
 end
 
+% matlabFunction(PHI,"File","single_H_function","vars",{[p_r_x p_r_y p_r_z]});
 matlabFunction(H,"File","H_function","vars",{p_r});
 
 % build up Y output matrix
@@ -75,6 +89,7 @@ for i=1:N
     DELTAS(i) = simplify(DELTAS(i));
 end
 
+% matlabFunction(Y(1),"File","single_Y_function","vars",{p_r(1,:), p_t, [a b], [m_11 m_12 m_13 m_22 m_23 m_33], m, w_noise});
 matlabFunction(Y,"File","Y_function","vars",{p_r, p_t, [a b], [m_11 m_12 m_13 m_22 m_23 m_33], m, w_noise});
 
 matlabFunction(DELTAS,"File","DELTA_function","vars",{p_r, p_t, [a b]});
