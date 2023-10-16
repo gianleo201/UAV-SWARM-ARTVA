@@ -8,7 +8,7 @@ end
 
 save LAST_N.mat N;
 
-clear LAST_N;
+clear LAST_N
 
 %% Symbolic variables
 

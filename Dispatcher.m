@@ -30,7 +30,7 @@ classdef Dispatcher < handle
                     for k = 1 : length(curr_uav_pending_info)
                         k_elem = curr_uav_pending_info(k);
                         if new_info.spawn_time  <= k_elem.spawn_time
-                            curr_uav_pending_info = [curr_uav_pending_info(1:k-1) new_info curr_uav_pending_info(k:end) ];
+                            curr_uav_pending_info = [new_info curr_uav_pending_info(k:end) ];
                             obj.pending_info{i} = curr_uav_pending_info;
                             break;
                         end

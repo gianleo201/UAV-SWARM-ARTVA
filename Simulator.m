@@ -45,7 +45,7 @@ b = 2;
 M_real = diag([b^2 a^2 a^2]);
 
 % RLS algorithm setup
-beta_ff = 0.9; % forgetly factor
+beta_ff = 0.99; % forgetly factor
 % RLS algorithm initialization
 % S_RLS = diag(repmat(1,1,10)); % initial covariance matrix
 % S_RLS = diag(repmat(1000,1,10)); % initial covariance matrix
@@ -66,21 +66,18 @@ X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
 % set NLP
 t_f = 30; % [s]  ( first estimated mission time )
 d_t = 5; % [m]
-if ~exist('rs_dist','var')
-    d_safe = 3;
-else
-    d_safe = rs_dist*0.75;
-    fprintf("Security distance among UAVs set to: %d\n",d_safe);
-end
-v_max = 5; % [m/s]
 % ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
-ObjectiveWeights = [1e-06 0.1 10];
+% ObjectiveWeights = [1e-06 0.1 10];
+ObjectiveWeights = [1 1 1];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
+% problem.solver = 'fmincon';
+% problem.options = optimoptions('fmincon', ...
+%                 'Display','iter-detailed', ...
+%                 'OptimalityTolerance',0.5);
 problem.solver = 'fmincon';
 problem.options = optimoptions('fmincon', ...
-                'Display','iter-detailed', ...
-                'OptimalityTolerance',0.5);
+                'Display','iter-detailed');
 
 if NLP_PLANNING
     NLPOnline; % solve NLP
@@ -94,19 +91,8 @@ else
 %         reciever_END = reciever_INIT(i,1:2) + L_t * [cos((i-0.5)*angle_sector) sin((i-0.5)*angle_sector)]; % for radial exploration
         reciever_END = reciever_INIT(i,1:2) + hl_length * [0 1]; % for vertical exploration
 %         reciever_END = reciever_INIT(i,1:2) + hl_length * [1 0]; % for horizontal exploration
-        
-        % extract linear path direction
-        UAV_path_dir = reciever_END-reciever_INIT(i,1:2);
-        UAV_path_dir = UAV_path_dir/norm(UAV_path_dir);
-        
-        % compute straight path trapezoidal trajectories
-        [q, qd, ~, tSamples, ~] = trapveltraj( ...
-            [ 0 L_t ], ...
-            trap_num_samples, ...
-            "PeakVelocity",0.5*v_max, ...
-            "EndTime",et);
-        UAV_trajs(i,:,1:2) = repmat(reciever_INIT(i,1:2),trap_num_samples,1)+[UAV_path_dir(1)*q.' UAV_path_dir(2)*q.'];
-        UAV_trajs(i,:,3:4) = [UAV_path_dir(1)*qd.' UAV_path_dir(2)*qd.'];
+        [xtemp,dxtemp] = straightTrapTraj(reciever_INIT(i,1:2),reciever_END,0.5*v_max,et,TIME_STEP);
+        UAV_trajs(i,:,:) = [xtemp dxtemp];
     end
 end
 
@@ -169,20 +155,22 @@ if COMPUTING_DEVICE_DELAY
 end
 
 % initialize UAV-network system
-network_matrix = [1 1 0 0 0;
-                  1 1 1 0 0;
-                  0 1 1 1 0;
-                  0 0 1 1 1;
-                  0 0 0 1 1];
+network_matrix = [1 1 0 0;
+                  1 1 1 0;
+                  0 1 1 1;
+                  0 0 1 1];
+
+
 UAV_NET = UAVNetwork(N, ...
                      TIME_STEP, ...
                      network_matrix, ...
                      recievers_pos, ...
                      X_hat, ...
                      S_RLS, ...
-                     @(x) Y_function(x, ...
-                     transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0) ...
-                     );
+@(x) Y_function(x,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0), ...
+                     Drone_NMPC, ...
+                     d_safe, ...
+                     d_safe);
 
 % DRLS estimate variation from standard RLS
 NETWORK_ESTIMATES = UAV_NET.pull_estimates();
@@ -237,6 +225,20 @@ while t_simulation(STEP) < t_simulation(end)
 %         set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
 %     end
 
+%     if t_replanning <= 0
+%         END_MISSION = UAV_NET.refresh_online_data();
+%         if END_MISSION
+%             break;
+%         end
+%         t_replanning = 10;
+%     end
+
+    END_MISSION = UAV_NET.refresh_online_data();
+    if END_MISSION
+        break;
+    end    
+
+
     % event-triggered replanning
     if  (NLP_PLANNING || DOUBLE_PHASE) && t_replanning <= 0
         ESTIMATE_ERROR = norm(transmitter_pos_hat-last_replanning_transmitter_pos_hat);
@@ -279,8 +281,8 @@ while t_simulation(STEP) < t_simulation(end)
 %     S_RLS = beta_ff * S_RLS + H_num*H_num.';
 
     % RLS algorithm step
-    S_RLS = beta_ff * inv(S_RLS) + H_num*H_num.';
-    X_hat = ( X_hat.' +  inv(S_RLS)*H_num*(Y_num-H_num.'*X_hat.') ).'; % new estimate of parameters vector;
+    S_RLS = inv(beta_ff * inv(S_RLS) + H_num*H_num.');
+    X_hat = ( X_hat.' +  S_RLS*H_num*(Y_num-H_num.'*X_hat.') ).'; % new estimate of parameters vector;
 
     % extract transmitter position estimate
     M_hat = [X_hat(1) X_hat(2) X_hat(3);X_hat(2) X_hat(4) X_hat(5); X_hat(3) X_hat(5) X_hat(6)];
@@ -300,10 +302,15 @@ while t_simulation(STEP) < t_simulation(end)
     end
 
     % simulate the UAVS
+%     step_results = ode45( ...
+%     UAV_TEAM(UAV_references,K_uavs_gain,total_A_matrix,total_B_matrix), ...
+%           [0 TIME_STEP], ...
+%           reshape(recievers_pos_ode.', 1, []));
+    U_NMPC = UAV_NET.NMPC_UAV_TEAM_step();
     step_results = ode45( ...
-    UAV_TEAM(UAV_references,K_uavs_gain,total_A_matrix,total_B_matrix), ...
-          [0 TIME_STEP], ...
-          reshape(recievers_pos_ode.', 1, []));
+        UAV_TEAM_NMPC(U_NMPC.',total_A_matrix,total_B_matrix), ...
+              [0 TIME_STEP], ...
+              reshape(recievers_pos_ode.', 1, []));
     recievers_pos_ode = reshape(step_results.y(:,end),4,N).';
     recievers_pos = [ recievers_pos_ode(:,1:2) zeros(N,1)];
 
@@ -359,6 +366,9 @@ while t_simulation(STEP) < t_simulation(end)
         NETWORK_ESTIMATES_DEV(i) = norm(NETWORK_ESTIMATES(i,1:2)-transmitter_pos_hat(1:2));
     end
     TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [TRANSMITTER_ESTIMATE_DRLS_DEVIATION;NETWORK_ESTIMATES_DEV];
+
+    % refresh online data for nmpc
+    UAV_NET.refresh_nmpc_state(recievers_pos_ode);
 
     % visualize step
     pause(TIME_STEP);
@@ -475,6 +485,25 @@ for i = 1 : N
 end
 hold off;
 
+% plot cputime
+fig8 = figure(8); grid on; hold on;
+title("NMPC CPU TIMES");
+xlabel("time [s]");
+ylabel("CPU-TIME [s]");
+xlim([0 TIME_STEP*STEP]);
+ylim([0 2*TIME_STEP]);
+for i = 1 : N
+    plot(t_simulation(1:STEP-1),UAV_NET.UAVS{i}.CPU_TIME(1:STEP-1),"Color",color_list(i),"LineWidth",1.5);
+    
+end
+plot(t_simulation(1:STEP-1),repmat(TIME_STEP,STEP-1,1),"--","Color","black","LineWidth",1.5);
+lgnd = cell(1,N+1);
+for i = 1 :N
+    lgnd{i} = "CPU TIME UAV "+num2str(i);
+end
+lgnd{i+1} = "MAX CPU TIME";
+legend(lgnd);
+hold off;
 
 
 %% UAV DYNAMICS ODE
@@ -482,3 +511,8 @@ hold off;
 function UAV_TEAM_ODE = UAV_TEAM(x_ref,K,p1,p2)
     UAV_TEAM_ODE = @(t,x) p1*x+p2*K*(x_ref-x);
 end
+
+function UAV_TEAM_ODE = UAV_TEAM_NMPC(U_NMPC,p1,p2)
+    UAV_TEAM_ODE = @(t,x) p1*x+p2*U_NMPC;
+end
+

@@ -42,8 +42,10 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
 %         display(O);
     
         % extract minimum singular value/eigenvalue
-        sigma_lower = sqrt(svds(O,1,"smallestnz"));
-%         display(sigma_lower);
+%         sigma_lower = sqrt(svds(O,1,"smallestnz"));
+
+        [~,svs,~] = svd(O,'econ','vector');
+        sigma_lower = svs(NUM_AGENTS);
         
         % maximize information gain
         out_val = out_val - W(3) * sigma_lower;

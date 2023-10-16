@@ -1,6 +1,6 @@
 %% EXECUTION FLAGS
 
-NLP_PLANNING = true;
+NLP_PLANNING = false;
 DOUBLE_PHASE = false;
 RECORD_VIDEO = false;
 COMPUTING_DEVICE_DELAY = false;
@@ -9,7 +9,7 @@ COMPUTING_DEVICE_DELAY = false;
 
 % set transimetter initial position
 % orientation is not of interest, imagine the transmitter frame parallel to the inertial one
-transmitter_real_pos = [-5 5 0];
+transmitter_real_pos = [8 -8 0];
 
 % initial guess for the transmitter
 transmitter_pos_hat = [0 0 0];
@@ -59,6 +59,20 @@ end
 % rs_dist = sqrt( 2*(hl_length/4)^2*(1-cos(angle_sector)) );
 
 % simulation time
-END_TIME = 120; % secs 2 mins of simulation
+END_TIME = 50; % secs 2 mins of simulation
 TIME_STEP = 0.1; % secs
 t_simulation = 0:TIME_STEP:END_TIME;
+
+
+% some parameters setup
+if ~exist('rs_dist','var')
+    d_safe = 3;
+else
+    d_safe = rs_dist*0.5;
+    fprintf("Security distance among UAVs set to: %.2f\n",d_safe);
+end
+v_max = 5; % [m/s]
+
+
+% NMPC controller init
+NMPC_INIT;
