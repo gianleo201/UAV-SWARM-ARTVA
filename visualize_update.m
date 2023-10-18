@@ -15,6 +15,10 @@ for i=1:N
     VIZ_trajs{2*i-1}.YData = temp(1:end,2);
     VIZ_trajs{2*i}.XData = temp(end,1);
     VIZ_trajs{2*i}.YData = temp(end,2);
+    [~,c_pnts]= plotCircle(temp(end,1:2),d_safe,'--',1,color_list(i),true);
+    set(VIZ_drone_circle_d_safe{i},'Xdata',c_pnts(:,1),'Ydata',c_pnts(:,2));
+    [~,c_pnts]= plotCircle(temp(end,1:2),d_safe + 2*v_max * Drone_NMPC.PredictionHorizon*0.1,':',0.5,color_list(i),true);
+    set(VIZ_drone_circle_sensing{i},'Xdata',c_pnts(:,1),'Ydata',c_pnts(:,2));
 end
 
 % update visual timer

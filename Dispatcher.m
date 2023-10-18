@@ -10,19 +10,19 @@ classdef Dispatcher < handle
 
     methods
 
-        function obj = Dispatcher(N,TIME_STEP,init_pos)
+        function obj = Dispatcher(N,TIME_STEP,init_pos_ode)
             obj.NUM_UAVS = N;
-            obj.curr_info = init_pos;
-            obj.pending_info = cell(obj.NUM_UAVS,1);
+            obj.curr_info = init_pos_ode;
+            obj.pending_info = cell(1,obj.NUM_UAVS);
             for i=1:obj.NUM_UAVS
                 obj.pending_info{i} = [];
             end
         end
 
-        function push_info(obj, info) % up to now uav pos
+        function push_info(obj, ode_info) % up to now uav ode_pos
             for i=1:obj.NUM_UAVS
-                new_info.pos = info(i,1:3);
-                new_info.spawn_time = info(i,4);
+                new_info.ode_pos = ode_info(i,1:4);
+                new_info.spawn_time = ode_info(i,5);
                 curr_uav_pending_info = obj.pending_info{i};
                 if isempty(curr_uav_pending_info)
                     obj.pending_info{i} = new_info;
@@ -45,7 +45,7 @@ classdef Dispatcher < handle
                 if ~isempty(curr_UAV)
 %                     latest_info = curr_UAV(1);
 %                     if latest_info.spawn_time <= TIME
-%                         obj.curr_info(i,:) = latest_info.pos;
+%                         obj.curr_info(i,:) = latest_info.ode_pos;
 %                         if length(curr_UAV) == 1
 %                             obj.pending_info{i} = [];
 %                         else
@@ -57,7 +57,7 @@ classdef Dispatcher < handle
                          k = k + 1;
                      end
                      if k > 1
-                         obj.curr_info(i,:) = curr_UAV(k-1).pos;
+                         obj.curr_info(i,:) = curr_UAV(k-1).ode_pos;
                          obj.pending_info{i} = curr_UAV(k:end);
                      end
                 end

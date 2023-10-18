@@ -68,29 +68,36 @@ t_f = 30; % [s]  ( first estimated mission time )
 d_t = 5; % [m]
 % ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
 % ObjectiveWeights = [1e-06 0.1 10];
-ObjectiveWeights = [1 1 1];
+ObjectiveWeights = [1 1e-01 1e-05];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
-% problem.solver = 'fmincon';
-% problem.options = optimoptions('fmincon', ...
-%                 'Display','iter-detailed', ...
-%                 'OptimalityTolerance',0.5);
 problem.solver = 'fmincon';
 problem.options = optimoptions('fmincon', ...
-                'Display','iter-detailed');
+                'Display','iter-detailed', ...
+                'OptimalityTolerance',1e-02);
+% problem.solver = 'fmincon';
+% problem.options = optimoptions('fmincon', ...
+%                 'Display','iter-detailed');
 
 if NLP_PLANNING
     NLPOnline; % solve NLP
 else
-%     L_t = 0.75*hl_length; % for radial exploration
-    L_t = hl_length; % for v-h exploration
+    if EXPLORATION_TYPE == "R"
+        L_t = 0.75*hl_length; % for radial exploration
+    elseif EXPLORATION_TYPE == "V" || EXPLORATION_TYPE == "H"
+        L_t = hl_length; % for v-h exploration
+    end
     et = 2*( L_t /(0.5*v_max)); % cruise velocity at 50%
     trap_num_samples = fix( et / TIME_STEP ) + 1;
     UAV_trajs = zeros(N,trap_num_samples,4);
     for i=1:N
-%         reciever_END = reciever_INIT(i,1:2) + L_t * [cos((i-0.5)*angle_sector) sin((i-0.5)*angle_sector)]; % for radial exploration
-        reciever_END = reciever_INIT(i,1:2) + hl_length * [0 1]; % for vertical exploration
-%         reciever_END = reciever_INIT(i,1:2) + hl_length * [1 0]; % for horizontal exploration
+        if EXPLORATION_TYPE == "R"
+        reciever_END = reciever_INIT(i,1:2) + L_t * [cos((i-0.5)*angle_sector) sin((i-0.5)*angle_sector)]; % for radial exploration
+        elseif EXPLORATION_TYPE == "V"
+            reciever_END = reciever_INIT(i,1:2) + hl_length * [0 1]; % for vertical exploration
+        elseif EXPLORATION_TYPE == "H"
+            reciever_END = reciever_INIT(i,1:2) + hl_length * [1 0]; % for horizontal exploration
+        end
         [xtemp,dxtemp] = straightTrapTraj(reciever_INIT(i,1:2),reciever_END,0.5*v_max,et,TIME_STEP);
         UAV_trajs(i,:,:) = [xtemp dxtemp];
     end
@@ -111,7 +118,6 @@ end
 t_replanning = 10; % replanning timer [s]
 RHO_THRESHOLD = 2;
 SIGMA_TRESHOLD = 0.7;
-
 
 % compute number of pairs of interdistances
 NUM_DIST = 0;
@@ -135,7 +141,7 @@ end
 my_temp = H_function(recievers_pos);
 my_temp = my_temp*my_temp.';
 last_matrix_sum = my_temp;
-my_temp = sqrt(svds(last_matrix_sum,1,"smallestnz"));
+my_temp = min_sv_O(last_matrix_sum,N);
 OI_VAL = [my_temp];
 
 % estimate variation
@@ -149,28 +155,31 @@ TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat
 if COMPUTING_DEVICE_DELAY
     NOMINAL_TRANSMISSION_DISTANCE = 10; % [m] is the distance between any UAV and the estimation device such that the nominal transmission time is the sample time
     medium_velocity = 10/TIME_STEP; % [m/s]
-    uncertain_time_range = 0.5*TIME_STEP; % [s]
+    uncertain_time_range = 0.1*TIME_STEP; % [s]
     estimation_device_pos = [0 -15 0];
-    AS = Dispatcher(length(recievers_pos),TIME_STEP,recievers_pos);
+    AS = Dispatcher(length(recievers_pos_ode),TIME_STEP,recievers_pos_ode);
 end
 
 % initialize UAV-network system
-network_matrix = [1 1 0 0;
-                  1 1 1 0;
-                  0 1 1 1;
-                  0 0 1 1];
-
-
+network_matrix = [1 1 0 0 0;
+                  1 1 1 0 0;
+                  0 1 1 1 0;
+                  0 0 1 1 1;
+                  0 0 0 1 1];
+if size(network_matrix,1) ~= N || size(network_matrix,2) ~= N
+    fprintf("ERROR: network matrix has wrong dimensions\n");
+    return;
+end
 UAV_NET = UAVNetwork(N, ...
                      TIME_STEP, ...
                      network_matrix, ...
-                     recievers_pos, ...
+                     recievers_pos_ode, ...
                      X_hat, ...
                      S_RLS, ...
 @(x) Y_function(x,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0), ...
                      Drone_NMPC, ...
                      d_safe, ...
-                     d_safe);
+                     v_max);
 
 % DRLS estimate variation from standard RLS
 NETWORK_ESTIMATES = UAV_NET.pull_estimates();
@@ -204,40 +213,22 @@ plotComputedTrajs;
 visualize_init;
 while t_simulation(STEP) < t_simulation(end)
 
-%     % ending condition on estimate variation
-%     if STEP > 1 && TRANSMITTER_ESTIMATE_VARIATION(end) < ESTIMATE_VARIATION_THRESHOLD
-%         break;
-%     end
+    if ~USE_NMPC
+        % ending condition on estimate variation
+        if STEP > 1 && TRANSMITTER_ESTIMATE_VARIATION(end) < ESTIMATE_VARIATION_THRESHOLD
+            break;
+        end
+    else
+        % decentralized ending condition
+        END_MISSION = UAV_NET.refresh_online_data();
+        if END_MISSION
+            break;
+        end
+    end
 
     % augment simulation-data list
     INTER_DISTANCES = [INTER_DISTANCES;zeros(1,NUM_DIST)];
     VELOCITIES = [VELOCITIES;zeros(1,N)];
-
-
-%     % if replanning timer is over run another optimization problem
-%     if t_replanning <= 0
-%         K_STEP = 2; % reset steps
-%         NLPOnline; % solve again OCP
-%         t_replanning = t_f-TIME_STEP; % reset timer
-%         % show computed trajs
-%         plotComputedTrajs;
-%         % plot new estimated mission endtime
-%         set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
-%     end
-
-%     if t_replanning <= 0
-%         END_MISSION = UAV_NET.refresh_online_data();
-%         if END_MISSION
-%             break;
-%         end
-%         t_replanning = 10;
-%     end
-
-    END_MISSION = UAV_NET.refresh_online_data();
-    if END_MISSION
-        break;
-    end    
-
 
     % event-triggered replanning
     if  (NLP_PLANNING || DOUBLE_PHASE) && t_replanning <= 0
@@ -257,10 +248,12 @@ while t_simulation(STEP) < t_simulation(end)
     
     end
     
+    % async case preliminarities
     if COMPUTING_DEVICE_DELAY
         % compute centralized async system step
-        available_pos = AS.pull_latest_info((STEP-1)*TIME_STEP);
-    
+        available_pos_ode = AS.pull_latest_info((STEP-1)*TIME_STEP);
+        available_pos = [available_pos_ode(:,1:2) zeros(length(available_pos_ode),1)];
+
         % compute new values ( with async sys measurment ) centralized
         H_num = H_function(available_pos);
         Y_num = Y_function(available_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
@@ -276,6 +269,7 @@ while t_simulation(STEP) < t_simulation(end)
         UAV_NET.DRLS(beta_ff,Y_num,H_num,false);
     end
 
+%     old RLS algorithm
 %     % RLS algorithm step
 %     X_hat = ( X_hat.' +  inv(S_RLS)*H_num*(Y_num-H_num.'*X_hat.') ).'; % new estimate of parameters vector;
 %     S_RLS = beta_ff * S_RLS + H_num*H_num.';
@@ -301,16 +295,25 @@ while t_simulation(STEP) < t_simulation(end)
         UAV_references = reshape(squeeze(UAV_trajs(:,K_STEP,:)).',1,[]).';
     end
 
-    % simulate the UAVS
-%     step_results = ode45( ...
-%     UAV_TEAM(UAV_references,K_uavs_gain,total_A_matrix,total_B_matrix), ...
-%           [0 TIME_STEP], ...
-%           reshape(recievers_pos_ode.', 1, []));
-    U_NMPC = UAV_NET.NMPC_UAV_TEAM_step();
-    step_results = ode45( ...
+    if ~USE_NMPC
+        % simulate the UAVS (standard PD controller)
+        step_results = ode45( ...
+        UAV_TEAM(UAV_references,K_uavs_gain,total_A_matrix,total_B_matrix), ...
+              [0 TIME_STEP], ...
+              reshape(recievers_pos_ode.', 1, []));
+    else
+        % simulate the UAVS (NMPC)
+        if COMPUTING_DEVICE_DELAY
+            UAV_NET.refresh_nmpc_state(available_pos_ode,true);
+        end
+        U_NMPC = UAV_NET.NMPC_UAV_TEAM_step();
+        step_results = ode45( ...
         UAV_TEAM_NMPC(U_NMPC.',total_A_matrix,total_B_matrix), ...
               [0 TIME_STEP], ...
               reshape(recievers_pos_ode.', 1, []));
+    end
+
+    % extract integration results
     recievers_pos_ode = reshape(step_results.y(:,end),4,N).';
     recievers_pos = [ recievers_pos_ode(:,1:2) zeros(N,1)];
 
@@ -321,17 +324,17 @@ while t_simulation(STEP) < t_simulation(end)
 
     if COMPUTING_DEVICE_DELAY
         % update centralized async system
-        new_info = [recievers_pos zeros(N,1)];
+        new_info = [recievers_pos_ode zeros(N,1)];
         for i=1:N
             random_alpha = rand(1,1);
 %             delta_spawn_time = ( norm(recievers_pos(i,1:2) - estimation_device_pos(1:2))/medium_velocity ) + (2*random_alpha-1) * uncertain_time_range;
             delta_spawn_time = ( norm(recievers_pos(i,1:2) - estimation_device_pos(1:2))/medium_velocity ) + random_alpha * uncertain_time_range;
             spawn_time = (STEP-1)*TIME_STEP + delta_spawn_time;
-            new_info(i,4) = spawn_time;
+            new_info(i,5) = spawn_time;
         end
         AS.push_info(new_info);
         % update decentrilized async system
-        UAV_NET.info_transmission(recievers_pos,(STEP-1)*TIME_STEP,medium_velocity,uncertain_time_range);
+        UAV_NET.info_transmission(recievers_pos_ode,(STEP-1)*TIME_STEP,medium_velocity,uncertain_time_range);
     end
 
     % compute interdistances
@@ -351,7 +354,8 @@ while t_simulation(STEP) < t_simulation(end)
     my_temp = H_function(recievers_pos);
     my_temp = my_temp*my_temp.';
     last_matrix_sum = last_matrix_sum + (my_temp - last_matrix_sum)/STEP;
-    new_OI = sqrt(svds(last_matrix_sum,1,"smallestnz"));
+    new_OI = min_sv_O(last_matrix_sum,N);
+%     new_OI = sqrt(svds(last_matrix_sum,1,"smallestnz"));
     OI_VAL = [OI_VAL new_OI];
 
     % update estimate error and variation
@@ -367,8 +371,10 @@ while t_simulation(STEP) < t_simulation(end)
     end
     TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [TRANSMITTER_ESTIMATE_DRLS_DEVIATION;NETWORK_ESTIMATES_DEV];
 
-    % refresh online data for nmpc
-    UAV_NET.refresh_nmpc_state(recievers_pos_ode);
+    if USE_NMPC && ~COMPUTING_DEVICE_DELAY
+        % refresh online data for nmpc
+        UAV_NET.refresh_nmpc_state(recievers_pos_ode,false);
+    end
 
     % visualize step
     pause(TIME_STEP);
@@ -485,26 +491,27 @@ for i = 1 : N
 end
 hold off;
 
-% plot cputime
-fig8 = figure(8); grid on; hold on;
-title("NMPC CPU TIMES");
-xlabel("time [s]");
-ylabel("CPU-TIME [s]");
-xlim([0 TIME_STEP*STEP]);
-ylim([0 2*TIME_STEP]);
-for i = 1 : N
-    plot(t_simulation(1:STEP-1),UAV_NET.UAVS{i}.CPU_TIME(1:STEP-1),"Color",color_list(i),"LineWidth",1.5);
-    
+if USE_NMPC
+    % plot cputime
+    fig8 = figure(8); grid on; hold on;
+    title("NMPC CPU TIMES");
+    xlabel("time [s]");
+    ylabel("CPU-TIME [s]");
+    xlim([0 TIME_STEP*STEP]);
+    ylim([0 2*TIME_STEP]);
+    for i = 1 : N
+        plot(t_simulation(1:STEP-1),UAV_NET.UAVS{i}.CPU_TIME(1:STEP-1),"Color",color_list(i),"LineWidth",1.5);
+        
+    end
+    plot(t_simulation(1:STEP-1),repmat(TIME_STEP,STEP-1,1),"--","Color","black","LineWidth",1.5);
+    lgnd = cell(1,N+1);
+    for i = 1 :N
+        lgnd{i} = "CPU TIME UAV "+num2str(i);
+    end
+    lgnd{i+1} = "MAX CPU TIME";
+    legend(lgnd);
+    hold off;
 end
-plot(t_simulation(1:STEP-1),repmat(TIME_STEP,STEP-1,1),"--","Color","black","LineWidth",1.5);
-lgnd = cell(1,N+1);
-for i = 1 :N
-    lgnd{i} = "CPU TIME UAV "+num2str(i);
-end
-lgnd{i+1} = "MAX CPU TIME";
-legend(lgnd);
-hold off;
-
 
 %% UAV DYNAMICS ODE
 

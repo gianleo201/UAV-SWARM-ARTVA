@@ -10,6 +10,5 @@ function sigma_lower = OI_function(pos_history)
     end
     O = (1/mean_horizon)*O;
 
-    % extract minimum singular value/eigenvalue
-    sigma_lower = sqrt(svds(O,1,"smallestnz"));
+    sigma_lower = min_sv_O(O,size_pos_history(2));
 end

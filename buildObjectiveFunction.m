@@ -4,15 +4,14 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
 
     function out_val = objectiveFunction(x)
         
-        % reshape input in tensor form
+        %% reshape input in tensor form
         t_f = x(1);
-%         display(t_f);
         Bns = reshape(x(2:end),[NUM_AGENTS, 2, N_approx_bernstain+1]);
 
-        % minimize mission time
+        %% minimize mission time
         out_val = W(1) * t_f;
         
-        % minimize UAVs acceleration profiles
+        %% minimize UAVs acceleration profiles
         Dm1 = BernsteinDifferentiationMatrix(N_approx_bernstain,t_f);
         Dm2 = BernsteinDifferentiationMatrix(N_approx_bernstain-1,t_f);
         w_integral = BeBOT(2*N_approx_bernstain-4,t_f);
@@ -27,7 +26,7 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
 
         end
 
-        % build O matrix
+        %% build O matrix
         O = zeros(10,10);
         mean_horizon = fix(t_f/TIME_STEP);
         temptemp = zeros(NUM_AGENTS,3);
@@ -41,13 +40,10 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
         O = (1/mean_horizon)*O;
 %         display(O);
     
-        % extract minimum singular value/eigenvalue
-%         sigma_lower = sqrt(svds(O,1,"smallestnz"));
-
-        [~,svs,~] = svd(O,'econ','vector');
-        sigma_lower = svs(NUM_AGENTS);
+        %% extract minimum singular value/eigenvalue
+        sigma_lower = min_sv_O(O,NUM_AGENTS);
         
-        % maximize information gain
+        %% maximize information gain
         out_val = out_val - W(3) * sigma_lower;
 
 %         display(out_val);

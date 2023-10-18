@@ -13,10 +13,16 @@ VIZ_t_p_h = plot(transmitter_pos_hat(1),transmitter_pos_hat(2),'x','Color','red'
 
 % UAVS trajectories
 VIZ_trajs = cell(2*N,1);
+VIZ_drone_circle_d_safe = cell(N,1);
+VIZ_drone_circle_sensing = cell(N,1);
 for i=1:N
     temp = reshape(recievers_pos_ode_history(1:STEP,i,1:2),STEP,2);
     VIZ_trajs{2*i-1} = plot(temp(1:end,1),temp(1:end,2),'LineWidth',1.5,'Color',color_list(i));
-    VIZ_trajs{2*i} = plot(temp(end,1),temp(end,2),'o','MarkerSize',3,'Linewidth',1.5,'Color',color_list(i));
+    VIZ_trajs{2*i} = plot(temp(end,1),temp(end,2),'o','MarkerSize',3,'Linewidth',1.5,'Color',color_list(i)); 
+    [cplt,~]= plotCircle(temp(end,1:2),d_safe,'--',1,color_list(i),false);
+    VIZ_drone_circle_d_safe{i} = cplt;
+    [cplt,~]= plotCircle(temp(end,1:2),d_safe + 2*v_max * Drone_NMPC.PredictionHorizon*0.1,':',0.5,color_list(i),false);
+    VIZ_drone_circle_sensing{i} = cplt;
 end
 
 % time label

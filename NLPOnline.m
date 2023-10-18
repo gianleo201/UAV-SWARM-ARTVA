@@ -39,7 +39,7 @@ for i=1:N
 end
 
 min_feasable_tf = (2*max_min_dist/v_max) + TIME_STEP;
-NLP_tf_X0 = min_feasable_tf + 10;
+NLP_tf_X0 = min_feasable_tf;
 
 for i=1:N
     
@@ -127,6 +127,12 @@ for i=1:N
 %         NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-2))*temp_traj;
 %     end
 
+
+%     % overwrite all previous mods
+%     for kth=3:N_approx_bernstain+1
+%         NLP_Bns_X0(i,:,kth) = NLP_Bns_X0(i,:,2);
+%     end
+
 end
 
 % peek initial trajectories ( before optimizations )
@@ -160,14 +166,3 @@ Bns = reshape(x_opt(2:end),N,2,N_approx_bernstain+1);
 
 % explicit computation of the trajecrtory points
 ComputeTrajs;
-
-%% AUXILIARY FUNCTIONS
-
-function n_free_sectors = count_available_sectors(vec)
-    n_free_sectors = length(vec);
-    for i=1:length(vec)
-        if vec(i) == 0
-            n_free_sectors = n_free_sectors - 1;
-        end
-    end
-end
