@@ -3,8 +3,8 @@ close all;
 
 %% EXECUTION FLAGS
 
-NLP_PLANNING = false;
-DOUBLE_PHASE = true;
+NLP_PLANNING = true;
+DOUBLE_PHASE = false;
 RECORD_VIDEO = false;
 COMPUTING_DEVICE_DELAY = false;
 USE_NMPC = false;

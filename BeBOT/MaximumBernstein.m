@@ -9,7 +9,6 @@ end
 
 N = length(ctrl_pt)-1;
 
-
 cpts = [ctrl_pt; linspace(0,1,N+1);zeros(1,N+1)];
 
 max_cpt = max(ctrl_pt);
