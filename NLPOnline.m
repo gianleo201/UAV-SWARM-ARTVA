@@ -127,7 +127,6 @@ for i=1:N
         NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-2))*temp_traj;
     end
 
-
 %     % overwrite all previous mods
 %     for kth=3:N_approx_bernstain+1
 %         NLP_Bns_X0(i,:,kth) = NLP_Bns_X0(i,:,2);

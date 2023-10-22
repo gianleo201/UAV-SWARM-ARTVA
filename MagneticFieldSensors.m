@@ -2,7 +2,7 @@
 LAST_N = load("LAST_N.mat");
 
 if LAST_N.N == N
-    fprintf("Code already generated for %d UAVs\n",N);
+    fprintf("Model already generated for %d UAVs\n",N);
     return;
 end
 

@@ -5,10 +5,10 @@ close all;
 
 NLP_PLANNING = true;
 DOUBLE_PHASE = false;
-RECORD_VIDEO = false;
-COMPUTING_DEVICE_DELAY = false;
+RECORD_VIDEO = true;
+COMPUTING_DEVICE_DELAY = true;
 USE_NMPC = false;
-EXPLORATION_TYPE = "R";  %% select one in the following string list ["V","H","R"]
+EXPLORATION_TYPE = "V";  %% select one in the following string list ["V","H","R"]
 
 %% ENVIRONMENT INITIALIZATION
 
@@ -17,7 +17,7 @@ N = 5;
 
 % set transimetter initial position
 % orientation is not of interest, imagine the transmitter frame parallel to the inertial one
-transmitter_real_pos = [-30 30 0];
+transmitter_real_pos = [25 25 0];
 
 % initial guess for the transmitter
 transmitter_pos_hat = [0 0 0];
@@ -38,9 +38,10 @@ reciever_INIT = zeros(N,3); %2-dimensional environment. 3d component is always 0
 % reciever_INIT(4,1:2) = [0 -10];
 % reciever_INIT(5,1:2) = [7.071 -7.071];
 
+hl_length = 60; % [m]
+
 if EXPLORATION_TYPE == "V"
     % horizontal spawn ( vertical exploration )
-    hl_length = 80; % [m]
     rs_dist = hl_length/N; % [m]
     for i=1:N
         reciever_INIT(i,1:2) = [transmitter_pos_hat(1)-(hl_length/2)+(i-0.5)*rs_dist ...
@@ -50,7 +51,6 @@ end
 
 if EXPLORATION_TYPE == "H"
     % vertical spawn ( horizontal exploration )
-    hl_length = 80; % [m]
     rs_dist = hl_length/N; % [m]
     for i=1:N
         reciever_INIT(i,1:2) = [transmitter_pos_hat(1)-(hl_length/2) ...
@@ -60,7 +60,6 @@ end
 
 if EXPLORATION_TYPE == "R"
     % radial spawn
-    hl_length = 80; % [m]
     angle_sector = (pi/2)/N; % [rad]
     for i=1:N
         reciever_INIT(i,1:2) = [transmitter_pos_hat(1)-(hl_length/2)+(hl_length/4)*cos((i-0.5)*angle_sector)

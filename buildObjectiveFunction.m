@@ -14,7 +14,7 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
         %% minimize UAVs acceleration profiles
         Dm1 = BernsteinDifferentiationMatrix(N_approx_bernstain,t_f);
         Dm2 = BernsteinDifferentiationMatrix(N_approx_bernstain-1,t_f);
-        w_integral = BeBOT(2*N_approx_bernstain-4,t_f);
+        w_integral = BeBOT(2*(N_approx_bernstain-2),t_f);
         for i=1:NUM_AGENTS
             
             Dtraj_i = squeeze(Bns(i,:,:))*Dm1; % compute first order derivative
@@ -30,7 +30,7 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
         O = zeros(10,10);
         mean_horizon = fix(t_f/TIME_STEP);
         temptemp = zeros(NUM_AGENTS,3);
-        for i=1:mean_horizon-1
+        for i=1:mean_horizon
             for j=1:NUM_AGENTS
                 temptemp(j,1:2) = BernsteinPoly(squeeze(Bns(j,:,:)),(i-1)*TIME_STEP,0,t_f);
             end

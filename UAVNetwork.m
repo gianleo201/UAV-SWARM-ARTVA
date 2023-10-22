@@ -6,6 +6,7 @@ classdef UAVNetwork < handle
         UAVS;
         compute_Y;
         TIME_STEP;
+        NMPC_handle;
     end
 
     methods
@@ -16,6 +17,7 @@ classdef UAVNetwork < handle
             obj.compute_Y = compute_Y;
             obj.UAVS = cell(obj.NUM_UAVS,1);
             obj.TIME_STEP = TIME_STEP;
+            obj.NMPC_handle = NMPC_handle;
 
             %% selection matrices and lists
             for i = 1 : obj.NUM_UAVS
@@ -63,15 +65,23 @@ classdef UAVNetwork < handle
                 %% known uavs
                 temp_mask = (obj.UAVS{i}.selection_list ~= i);
                 num_neigh = length(obj.UAVS{i}.selection_list)-1;
-                neigh = obj.UAVS{i}.selection_matrix * [recievers_pos_ode0(:,1:2) zeros(size(recievers_pos_ode0,1),1)];
-                neigh = neigh(temp_mask,:);
+                if ~isempty(obj.UAVS{i}.selection_matrix)
+                    neigh = obj.UAVS{i}.selection_matrix * [recievers_pos_ode0(:,1:2) zeros(size(recievers_pos_ode0,1),1)];
+                    neigh = neigh(temp_mask,:);
+                else
+                    neigh = [];
+                end
                 neigh = [neigh;zeros(obj.NUM_UAVS-num_neigh,3)];
 
                 %% sensor
                 temp_mask1 = (obj.UAVS{i}.complementar_selection_list ~= i);
                 num_non_neigh = obj.NUM_UAVS-num_neigh-1;
-                non_neigh = obj.UAVS{i}.complementar_selection_matrix * [recievers_pos_ode0(:,1:2) zeros(size(recievers_pos_ode0,1),1)];
-                non_neigh = non_neigh(temp_mask1,:);
+                if ~isempty(obj.UAVS{i}.complementar_selection_matrix)
+                    non_neigh = obj.UAVS{i}.complementar_selection_matrix * [recievers_pos_ode0(:,1:2) zeros(size(recievers_pos_ode0,1),1)];
+                    non_neigh = non_neigh(temp_mask1,:);
+                else
+                    non_neigh = [];
+                end
                 non_neigh = [non_neigh;zeros(obj.NUM_UAVS-num_non_neigh,3)];
                 
                 %%
@@ -200,9 +210,14 @@ classdef UAVNetwork < handle
                 %% NMPC step
                 tic;
                 obj.UAVS{i}.OD.ref = EMA_const_reference(obj.UAVS{i}.X,[obj.UAVS{i}.X_ref(1:2) 0 0],obj.UAVS{i}.lambda_factor,obj.UAVS{i}.prediction_horizon);
-                [nmpc_mv, new_OD, info] = NMPC_UAV(obj.UAVS{i}.X.', ...
-                                                       obj.UAVS{i}.U.', ...
-                                                       obj.UAVS{i}.OD);
+%                 [nmpc_mv, new_OD, info] = NMPC_UAV(obj.UAVS{i}.X.', ...
+%                                                        obj.UAVS{i}.U.', ...
+%                                                        obj.UAVS{i}.OD);
+                [nmpc_mv, new_OD, info] = NMPC_STEP(obj.NMPC_handle, ...
+                                                    obj.UAVS{i}.X.', ...
+                                                    obj.UAVS{i}.U.', ...
+                                                    obj.UAVS{i}.OD, ...
+                                                    true);
                 elapsed_time = toc;
 
                 %% register cpu time
@@ -212,10 +227,10 @@ classdef UAVNetwork < handle
                 nmpc_status = info.ExitFlag;
                 if nmpc_status < 0
                     fprintf("No feasable solution found for drone %d\n",i);
-%                     obj.UAVS{i}.U = - obj.UAVS{i}.X(3:4);
-                    obj.UAVS{i}.U = nmpc_mv.';
-%                     obj.UAVS{i}.OD = new_OD; % do not modify online data
-%                     with corrupted data
+                    fprintf("Exit flag number: %d\n",nmpc_status);
+                    obj.UAVS{i}.U = - obj.UAVS{i}.X(3:4); % stop the UAV
+%                     obj.UAVS{i}.U = nmpc_mv.';
+                    obj.UAVS{i}.OD = new_OD; % do not modify online data
                 else
                     obj.UAVS{i}.U = nmpc_mv.';
                     obj.UAVS{i}.OD = new_OD;
@@ -235,20 +250,28 @@ classdef UAVNetwork < handle
                 %% known uavs
                 temp_mask = (obj.UAVS{i}.selection_list ~= i);
                 num_neigh = length(obj.UAVS{i}.selection_list)-1;
-                if ASYNC
-                    neigh = [obj.UAVS{i}.dispatcher.curr_info(:,1:2) zeros(size(obj.UAVS{i}.dispatcher.curr_info,1),1)];
-                    neigh = neigh(temp_mask,:);
+                if num_neigh > 0
+                    if ASYNC
+                        neigh = [obj.UAVS{i}.dispatcher.curr_info(:,1:2) zeros(size(obj.UAVS{i}.dispatcher.curr_info,1),1)];
+                        neigh = neigh(temp_mask,:);
+                    else
+                        neigh = obj.UAVS{i}.selection_matrix * [recievers_pos_ode(:,1:2) zeros(size(recievers_pos_ode,1),1)];
+                        neigh = neigh(temp_mask,:);
+                    end
                 else
-                    neigh = obj.UAVS{i}.selection_matrix * [recievers_pos_ode(:,1:2) zeros(size(recievers_pos_ode,1),1)];
-                    neigh = neigh(temp_mask,:);
+                    neigh = [];
                 end
                 neigh = [neigh;zeros(obj.NUM_UAVS-num_neigh,3)];
 
                 %% sensor
                 temp_mask1 = (obj.UAVS{i}.complementar_selection_list ~= i);
                 num_non_neigh = obj.NUM_UAVS-num_neigh-1;
-                non_neigh = obj.UAVS{i}.complementar_selection_matrix * [recievers_pos_ode(:,1:2) zeros(size(recievers_pos_ode,1),1)];
-                non_neigh = non_neigh(temp_mask1,:);
+                if ~isempty(obj.UAVS{i}.complementar_selection_matrix)
+                    non_neigh = obj.UAVS{i}.complementar_selection_matrix * [recievers_pos_ode(:,1:2) zeros(size(recievers_pos_ode,1),1)];
+                    non_neigh = non_neigh(temp_mask1,:);
+                else
+                    non_neigh = [];
+                end
                 non_neigh = [non_neigh;zeros(obj.NUM_UAVS-num_non_neigh,3)];
                 
                 %%
