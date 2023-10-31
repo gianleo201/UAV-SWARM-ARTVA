@@ -5,9 +5,9 @@ close all;
 
 NLP_PLANNING = true;
 DOUBLE_PHASE = false;
-RECORD_VIDEO = true;
+RECORD_VIDEO = false;
 COMPUTING_DEVICE_DELAY = true;
-USE_NMPC = false;
+USE_NMPC = true;
 EXPLORATION_TYPE = "V";  %% select one in the following string list ["V","H","R"]
 
 %% ENVIRONMENT INITIALIZATION
@@ -23,7 +23,7 @@ transmitter_real_pos = [25 25 0];
 transmitter_pos_hat = [0 0 0];
 
 % color list to indetify each UAV
-color_list = ["green","blue","yellow","cyan","magenta"];
+color_list = ["green","blue"," #FF8000","cyan","magenta"];
 
 % degree of approximation of trajectories ( at least 3rd order )
 N_approx_bernstain = 5;

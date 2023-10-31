@@ -41,7 +41,7 @@ classdef UAVNetwork < handle
                         UAV_struct.complementar_selection_list = [UAV_struct.complementar_selection_list j];
                     end
                 end
-                UAV_struct.dispatcher = Dispatcher(length(UAV_struct.selection_list),TIME_STEP,recievers_pos_ode0(UAV_struct.selection_list,:));
+                UAV_struct.dispatcher = Dispatcher(length(UAV_struct.selection_list),TIME_STEP,recievers_pos_ode0(UAV_struct.selection_list,:),X_hat0,S_RLS0);
                 obj.UAVS{i} = UAV_struct;
             end
 
@@ -49,7 +49,6 @@ classdef UAVNetwork < handle
             for i = 1 : obj.NUM_UAVS
                 obj.UAVS{i}.X_hat = X_hat0;
                 obj.UAVS{i}.S_RLS = S_RLS0;
-                obj.UAVS{i}.S_RLS_temp = zeros(10,10);
                 % extract transmitter estimate position
                 X_hat = obj.UAVS{i}.X_hat;
                 M_hat = [X_hat(1) X_hat(2) X_hat(3);X_hat(2) X_hat(4) X_hat(5); X_hat(3) X_hat(5) X_hat(6)];
@@ -103,14 +102,18 @@ classdef UAVNetwork < handle
         function DRLS(obj,beta_ff,Y_num_arg,H_num_arg,ASYNC,TIME)
             
             %% RLS step
+            new_S_RLSs = cell(1,obj.NUM_UAVS);
+            new_X_HATs = cell(1,obj.NUM_UAVS);
+            new_final_S_RLSs = cell(1,obj.NUM_UAVS);
+            new_final_X_HATs = cell(1,obj.NUM_UAVS);
             for i = 1 : obj.NUM_UAVS
                 Qs = obj.UAVS{i}.selection_matrix;
                 if ASYNC
-                    last_pos_info = obj.UAVS{i}.dispatcher.pull_latest_info(TIME);
-                    size_last_pos_info = size(last_pos_info);
-                    last_pos_info = [last_pos_info(:,1:2) zeros(size_last_pos_info(1),1)];
+                    last_pos_info_cell = obj.UAVS{i}.dispatcher.pull_latest_info(TIME);
+                    last_pos_info = extractPosOde(last_pos_info_cell);
+                    last_pos_info = [last_pos_info(:,1:2) zeros(size(last_pos_info,1),1)];
                     recievers_pos = Qs.'*last_pos_info;
-                    H_num = H_function(recievers_pos); 
+                    H_num = H_function(recievers_pos);
                     Y_num = obj.compute_Y(recievers_pos);
                     H_num = H_num*Qs.';
                     Y_num = Qs*Y_num;
@@ -122,39 +125,62 @@ classdef UAVNetwork < handle
                 X_hat = obj.UAVS{i}.X_hat;
                 S_RLS = obj.UAVS{i}.S_RLS;
                 
-%                 X_hat = ( X_hat.' +  inv(S_RLS)*H_num*(Y_num-H_num.'*X_hat.') ).'; % new estimate of parameters vector;
-%                 S_RLS = beta_ff * S_RLS + H_num*H_num.';
-
+                % RLS step
                 S_RLS = inv(beta_ff * inv(S_RLS) + H_num*H_num.');
                 X_hat = ( X_hat.' +  S_RLS*H_num*(Y_num-H_num.'*X_hat.') ).'; % new estimate of parameters vector;
-
-                obj.UAVS{i}.X_hat = X_hat;
-                obj.UAVS{i}.S_RLS = S_RLS;
+                
+                % save step
+                new_S_RLSs{i} = S_RLS;
+                new_X_HATs{i} = X_hat;
             end
 
             %% D step
 
-            %% update X_hat
+            %% update X_hat and S_RLS
             for i = 1 : obj.NUM_UAVS
                 selection_list = obj.UAVS{i}.selection_list;
                 X_hat = zeros(1,10);
                 S_RLS_temp = zeros(10,10);
                 S_RLS_temp1 = zeros(10,10);
-                for k = 1 : length(selection_list)
-                    S_RLS_temp = S_RLS_temp + obj.UAVS{selection_list(k)}.S_RLS;
-%                     S_RLS_temp1 = S_RLS_temp1 + inv(obj.UAVS{selection_list(k)}.S_RLS);
+                if ASYNC
+                    info_cell = obj.UAVS{i}.dispatcher.curr_info_cell;
+                    for k = 1:length(selection_list) 
+                        if i == selection_list(k)
+                            S_RLS_to_be_summed = new_S_RLSs{i};
+                            X_hat_to_be_summed = new_X_HATs{i};
+                        else
+                            S_RLS_to_be_summed = info_cell{k}.S_RLS;
+                            X_hat_to_be_summed = info_cell{k}.X_hat;
+                        end
+                        S_RLS_temp = S_RLS_temp + S_RLS_to_be_summed;
+                        X_hat = X_hat + X_hat_to_be_summed;
+                    end
+                else
+                    for k = 1 : length(selection_list)
+                        if i == selection_list(k)
+                            S_RLS_temp = S_RLS_temp + new_S_RLSs{i};
+                            X_hat = X_hat + new_X_HATs{i};
+                        else
+                            S_RLS_temp = S_RLS_temp + obj.UAVS{selection_list(k)}.S_RLS;
+                            X_hat = X_hat + obj.UAVS{selection_list(k)}.X_hat;
+                        end
+                    end
                 end
-                obj.UAVS{i}.S_RLS_temp = S_RLS_temp;
-                for k = 1 : length(selection_list)
-%                     X_hat = X_hat + (inv(obj.UAVS{selection_list(k)}.S_RLS)*(obj.UAVS{selection_list(k)}.X_hat).').';
-                    X_hat = X_hat + obj.UAVS{selection_list(k)}.X_hat;
-                end
-%                 X_hat = (inv(S_RLS_temp1)*(X_hat.')).';
                 X_hat = X_hat/length(obj.UAVS{i}.selection_list);
-                obj.UAVS{i}.X_hat = X_hat;
+                S_RLS = S_RLS_temp/length(obj.UAVS{i}.selection_list);
+%                 X_hat = X_hat/(-0.5+length(obj.UAVS{i}.selection_list));
+%                 S_RLS = S_RLS_temp/(-0.5+length(obj.UAVS{i}.selection_list));
+                new_final_X_HATs{i} = X_hat;
+                new_final_S_RLSs{i} = S_RLS;
+            end
+
+            %% update new S_RLSs and X_HATs
+            for i = 1 : obj.NUM_UAVS
+                obj.UAVS{i}.S_RLS = new_final_S_RLSs{i};
+                obj.UAVS{i}.X_hat = new_final_X_HATs{i};
+                X_hat = new_final_X_HATs{i};
                 % update transmitter estimate position
                 M_hat = [X_hat(1) X_hat(2) X_hat(3);X_hat(2) X_hat(4) X_hat(5); X_hat(3) X_hat(5) X_hat(6)];
-%                 old_transmitter_pos_hat = transmitter_pos_hat;
                 obj.UAVS{i}.transmitter_pos_hat = (inv(M_hat)*X_hat(7:9).').'; % new transmitter estimate
 
                 if norm(obj.UAVS{i}.transmitter_pos_hat(1:2) - obj.UAVS{i}.last_transmitter_pos_hat(1:2)) < 1e-04 ...
@@ -165,11 +191,6 @@ classdef UAVNetwork < handle
                 end
 
                 obj.UAVS{i}.last_transmitter_pos_hat = obj.UAVS{i}.transmitter_pos_hat;
-            end
-
-            %% update S_RLS
-            for i = 1 : obj.NUM_UAVS
-                obj.UAVS{i}.S_RLS = obj.UAVS{i}.S_RLS_temp / length(obj.UAVS{i}.selection_list);
             end
 
         end
@@ -185,18 +206,22 @@ classdef UAVNetwork < handle
         function info_transmission(obj,UAV_positions,TIME,medium_velocity,uncertain_time_range)
             for i = 1 : obj.NUM_UAVS
                 selection_list = obj.UAVS{i}.selection_list;
-                info = zeros(length(selection_list),5);
+                info = cell(1,length(selection_list));
                 for j = 1 : length(selection_list)
-                    info(j,1:4) = UAV_positions(selection_list(j),:);
+                    jth_struct = {};
+                    jth_struct.pos_ode = UAV_positions(selection_list(j),:);
+                    jth_struct.X_hat = obj.UAVS{selection_list(j)}.X_hat;
+                    jth_struct.S_RLS = obj.UAVS{selection_list(j)}.S_RLS;
                     if selection_list(j) ~= i
                         %% compute delta time with deterministic + random variable
                         d_ij = norm(UAV_positions(i,1:2)-UAV_positions(selection_list(j),1:2));
                         random_alpha = rand(1,1);
                         delta_spawn_time = ( d_ij/medium_velocity ) + (2*random_alpha-1) * uncertain_time_range;
-                        info(j,5) = TIME + delta_spawn_time;
+                        jth_struct.spawn_time = TIME + delta_spawn_time;
                     else
-                        info(j,5) = TIME;
+                        jth_struct.spawn_time = TIME;
                     end
+                    info{j} = jth_struct;
                 end
                 obj.UAVS{i}.dispatcher.push_info(info);
             end
@@ -209,10 +234,12 @@ classdef UAVNetwork < handle
             for i = 1 : obj.NUM_UAVS
                 %% NMPC step
                 tic;
-                obj.UAVS{i}.OD.ref = EMA_const_reference(obj.UAVS{i}.X,[obj.UAVS{i}.X_ref(1:2) 0 0],obj.UAVS{i}.lambda_factor,obj.UAVS{i}.prediction_horizon);
-%                 [nmpc_mv, new_OD, info] = NMPC_UAV(obj.UAVS{i}.X.', ...
-%                                                        obj.UAVS{i}.U.', ...
-%                                                        obj.UAVS{i}.OD);
+                
+                obj.UAVS{i}.OD.ref = EMA_const_reference(obj.UAVS{i}.X, ...
+                                [obj.UAVS{i}.X_ref(1:2) 0 0], ...
+                                obj.UAVS{i}.lambda_factor, ...
+                                obj.UAVS{i}.prediction_horizon);
+
                 [nmpc_mv, new_OD, info] = NMPC_STEP(obj.NMPC_handle, ...
                                                     obj.UAVS{i}.X.', ...
                                                     obj.UAVS{i}.U.', ...
@@ -235,8 +262,10 @@ classdef UAVNetwork < handle
                     obj.UAVS{i}.U = nmpc_mv.';
                     obj.UAVS{i}.OD = new_OD;
                 end
+
                 %% return input
                 Us = [Us obj.UAVS{i}.U];
+
             end
         end
 
@@ -252,7 +281,8 @@ classdef UAVNetwork < handle
                 num_neigh = length(obj.UAVS{i}.selection_list)-1;
                 if num_neigh > 0
                     if ASYNC
-                        neigh = [obj.UAVS{i}.dispatcher.curr_info(:,1:2) zeros(size(obj.UAVS{i}.dispatcher.curr_info,1),1)];
+                        temp_val = extractPosOde(obj.UAVS{i}.dispatcher.curr_info_cell);
+                        neigh = [temp_val(:,1:2) zeros(size(temp_val,1),1)];
                         neigh = neigh(temp_mask,:);
                     else
                         neigh = obj.UAVS{i}.selection_matrix * [recievers_pos_ode(:,1:2) zeros(size(recievers_pos_ode,1),1)];
@@ -305,6 +335,5 @@ classdef UAVNetwork < handle
 
             end
         end
-
     end
 end

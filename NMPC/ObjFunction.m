@@ -29,31 +29,25 @@ function J = ObjFunction(X,U,e,data,neigh_pos,N_neighbours,non_neigh_pos,N_non_n
 
     % maximize neighbours distances
 %     XID = 0;
-% %     WD = 0.1 * ones(1,N_neighbours);
 %     for i = 1:N_neighbours
 %         temp = XS-XNeigh(:,2*i-1:2*i);
 %         if norm(temp(1,:)) <= (d_safe + v_max * p*0.1)
 %             temp1 = 0;
 %             for j = 1:p
 % %                 temp1 = temp1 + temp(j,:)*temp(j,:).';
-%                 temp1 = temp1 + (sqrt(temp(j,:)*temp(j,:).')-(d_safe + v_max * p*0.1))^2;
 %             end
-% %             XID = XID + WD(i)*temp1 ;
 %         XID = XID + temp1 ;
 %         end
 %     end
 %     % maximize non niegh dists
 %     XNID = 0;
-% %     WND = 0.1 * ones(1,N_non_neighbours);
 %     for i = 1:N_non_neighbours
 %         temp = XS-XNNeigh(:,2*i-1:2*i);
 %         if norm(temp(1,:)) <= (d_safe + 2*v_max * p*0.1) && norm(temp(1,:)) <= (d_safe + v_max * p*0.1)
 %             temp1 = 0;
 %             for j = 1:p
 % %                 temp1 = temp1 + temp(j,:)*temp(j,:).';
-%                 temp1 = temp1 + (sqrt(temp(j,:)*temp(j,:).')-(d_safe + v_max * p*0.1))^2;
 %             end
-% %             XNID = XNID + WND(i)*temp1 ;
 %             XNID = XNID + temp1 ;
 %         end
 %     end
@@ -61,17 +55,20 @@ function J = ObjFunction(X,U,e,data,neigh_pos,N_neighbours,non_neigh_pos,N_non_n
 
     % maximize neighbours distances
     XID = 0;
-%     WD = 0.1 * ones(1,N_neighbours);
     for i = 1:N_neighbours
         temp = XS-XNeigh(:,2*i-1:2*i);
+        temp_dst = XNeigh(1,2*i-1:2*i)-X(1,1:2);
+        curr_vel = X(1,3:4);
+        var_sec_dist = 1+(curr_vel*temp_dst.'/(v_max*norm(temp_dst)));
         temp1 = 0;
         for j = 1:p
-%                 temp1 = temp1 + temp(j,:)*temp(j,:).';
-            if norm(temp(j,:)) <= d_safe + v_max * p * 0.1
-                temp1 = temp1 + (sqrt(temp(j,:)*temp(j,:).')-(d_safe + v_max * p*0.1))^2;
+%             if norm(temp(j,:)) <= d_safe + 2*v_max * p * 0.1
+%                 temp1 = temp1 + (sqrt(temp(j,:)*temp(j,:).')-(d_safe + 2*v_max * p*0.1))^2;
+%             end
+            if norm(temp(j,:)) <= d_safe + var_sec_dist*v_max * p * 0.1
+                temp1 = temp1 + (sqrt(temp(j,:)*temp(j,:).')-(d_safe + var_sec_dist*v_max * p*0.1))^2;
             end
         end
-%         XID = XID + WD(i)*temp1 ;
         XID = XID + temp1 ;
     end
     % maximize dist to nearest non_niegh
@@ -85,16 +82,20 @@ function J = ObjFunction(X,U,e,data,neigh_pos,N_neighbours,non_neigh_pos,N_non_n
                 nearest_index = i;
             end
         end
+        temp_dst = nearest_non_neighbour-X(1,1:2);
+        curr_vel = X(1,3:4);
+        var_sec_dist = 1+(curr_vel*temp_dst.'/(v_max*norm(temp_dst)));
         if norm(X(1,1:2)-nearest_non_neighbour) <= (d_safe + 2*v_max * p*0.1)
             temp = XS-XNNeigh(:,2*nearest_index-1:2*nearest_index);
             temp1 = 0;
             for j = 1:p
-%                 temp1 = temp1 + temp(j,:)*temp(j,:).';
-                if norm(temp(j,:)) <= d_safe + v_max * p * 0.1
-                    temp1 = temp1 + (sqrt(temp(j,:)*temp(j,:).')-(d_safe + v_max * p*0.1))^2;
+%                 if norm(temp(j,:)) <= d_safe + 2*v_max * p * 0.1
+%                     temp1 = temp1 + (sqrt(temp(j,:)*temp(j,:).')-(d_safe + 2*v_max * p*0.1))^2;
+%                 end
+                if norm(temp(j,:)) <= d_safe + var_sec_dist*v_max * p * 0.1
+                    temp1 = temp1 + (sqrt(temp(j,:)*temp(j,:).')-(d_safe + var_sec_dist*v_max * p*0.1))^2;
                 end
             end
-%             XNID = XNID + WND(i)*temp1 ;
             XNID = XNID + temp1 ;
         end
     end
@@ -118,8 +119,8 @@ function J = ObjFunction(X,U,e,data,neigh_pos,N_neighbours,non_neigh_pos,N_non_n
     Wx = (1/(2*d_safe))^2;
     Wdx = (1/(v_max/2))^2;
     Wu = (1/9.81)^2;
-    We = (1/(0.1*d_safe))^2;
-    Wxnid = (d_safe)^2;
+    We = (1/(d_safe))^2;
+    Wxnid = (0.1*d_safe)^2;
 %     Wxnid = 0;
 %     Wxnid = (10)^2;
     Wsigma = (1e-02)^2;
