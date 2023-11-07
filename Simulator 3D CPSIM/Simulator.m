@@ -3,41 +3,12 @@ clear;
 EnvINIT; % initialize environment
 MagneticFieldSensors; % build Symbolically H matrix
 
-%% UAVS DYNAMICS (symilified to double integrators)
-
-% imageine point robot. Can act with them with 2 cartesian normal forces Fx
-% Fy
-
-generic_A_matrix = [0 0 1 0;
-                    0 0 0 1;
-                    0 0 0 0;
-                    0 0 0 0];
-generic_B_matrix = [0 0;
-                    0 0;
-                    1 0;
-                    0 1];
-temp_A = cell(N,1);
-temp_B = cell(N,1);
-temp_K = cell(N,1);
-
-% set PD controller
-for i=1:N
-    temp_A{i} = generic_A_matrix;
-    temp_B{i} = generic_B_matrix;
-    temp_K{i} = [5 0 20  0;
-                 0 5  0 20]; % control gains
-end
-
-total_A_matrix = blkdiag(temp_A{:});
-total_B_matrix = blkdiag(temp_B{:});
-K_uavs_gain = blkdiag(temp_K{:});
-
 %% MAINLOOP SETUP
 
 % robots initial position setup
 recievers_pos = reciever_INIT;
-recievers_pos_ode = [reciever_INIT(:,1:2) zeros(N,2)];
-recievers_pos_ode_history = zeros(END_TIME/TIME_STEP,N,4);
+recievers_pos_ode = [reciever_INIT(:,1:3) zeros(N,9)];
+recievers_pos_ode_history = zeros(END_TIME/TIME_STEP,N,12);
 recievers_pos_ode_history(1,:,:) = recievers_pos_ode;
 
 a = 1;
@@ -68,22 +39,24 @@ X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
 
 % set NLP
 t_f = 30; % [s]  ( first estimated mission time )
-d_t = 10; % [m]
+d_t = 5; % [m]
 % ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
-ObjectiveWeights = [1e-06 0.1 1e-03];
+ObjectiveWeights = [1 1e-06/N 1e-01/N];
 % ObjectiveWeights = [1 1e-02 1e-01];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
 problem.solver = 'fmincon';
 
-% problem.options = optimoptions('fmincon', ...
-%                 'Display','iter-detailed', ...
-%                 'OptimalityTolerance',1e-02);
+% problem.options = optimoptions("fmincon", ...
+%                 "Display","iter-detailed",...
+%                 "OptimalityTolerance",1e-02);
 
-% problem.options = optimoptions('fmincon', ...
-%                 'Display','iter-detailed');
-
-problem.options = optimoptions('fmincon');
+problem.options = optimoptions("fmincon",...
+                "Display","iter-detailed",...
+                "Algorithm","interior-point",...
+                "EnableFeasibilityMode",true,...
+                "SubproblemAlgorithm","cg",...
+                "OptimalityTolerance",1e-02);
 
 if ~USE_NMPC
     if NLP_PLANNING
@@ -123,7 +96,7 @@ INTER_DISTANCES = [zeros(1,NUM_DIST)];
 VELOCITIES = [zeros(1,N)];
 k = 1;
 for i = 1:N
-    VELOCITIES(end,i) = norm(recievers_pos_ode(i,3:4));
+    VELOCITIES(end,i) = norm(recievers_pos_ode(i,4:6));
     for j = i+1:N
         INTER_DISTANCES(end,k) = norm(recievers_pos(i,:)-recievers_pos(j,:));
         k = k + 1;
@@ -150,19 +123,20 @@ if COMPUTING_DEVICE_DELAY
     medium_velocity = NOMINAL_TRANSMISSION_DISTANCE/TIME_STEP; % [m/s]
     uncertain_time_range = 50*TIME_STEP; % [s]
     estimation_device_pos = [0 100 0];
-    AS = Dispatcher(size(recievers_pos_ode,1),TIME_STEP,recievers_pos_ode,NaN,NaN);
+    AS = Dispatcher(N,TIME_STEP,recievers_pos_ode,NaN,NaN);
 end
 
 % initialize UAV-network system
-network_matrix = [1 1 0 0 0;
-                  1 1 1 0 0;
-                  0 1 1 1 0;
-                  0 0 1 1 1;
-                  0 0 0 1 1];
-network_matrix = ones(5,5);
-% network_matrix = [1 1 0;
-%                   1 1 1;
-%                   0 1 1];
+% network_matrix = [1 1 0 0 0;
+%                   1 1 1 0 0;
+%                   0 1 1 1 0;
+%                   0 0 1 1 1;
+%                   0 0 0 1 1];
+% network_matrix = ones(5,5);
+network_matrix = [1 1 0 0;
+                  1 1 1 0;
+                  0 1 1 1;
+                  0 0 1 1];
 % network_matrix = [1 1;
 %                   1 1];
 % check matrix dimensions
@@ -179,38 +153,66 @@ UAV_NET = UAVNetwork(N, ...
 @(x) Y_function(x,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0), ...
                      Drone_NMPC, ...
                      d_safe, ...
-                     v_max);
+                     v_max, ...
+                     "3D", ...
+                     model_params);
 
 % DRLS estimate variation from standard RLS
 NETWORK_ESTIMATES = UAV_NET.pull_estimates();
 NETWORK_ESTIMATES_DEV = zeros(1,N);
 for i = 1 : N
-    NETWORK_ESTIMATES_DEV(i) = norm(NETWORK_ESTIMATES(i,1:2)-transmitter_pos_hat(1:2));
+    NETWORK_ESTIMATES_DEV(i) = norm(NETWORK_ESTIMATES(i,1:3)-transmitter_pos_hat);
 end
 TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [NETWORK_ESTIMATES_DEV];
+
+%% CONNECT TO COPPELIA SIM
+
+% connection to env
+client = RemoteAPIClient();
+sim = client.getObject('sim');
+
+% get uav handles
+UAV_propellers_list = cell(1,N);
+UAV_handels = cell(N,2);
+transmitter_handle = sim.getObject("/Transmitter");
+for i =1:N
+    UAV_handels{i,1} = sim.getObject("/Quadcopter["+num2str(i-1)+"]");
+    UAV_handels{i,2} = sim.getObject("/Quadcopter["+num2str(i-1)+"]/target");
+    temp_vec = zeros(1,4);
+    for j=1:4
+        temp_vec(j) = sim.getObject("/Quadcopter["+num2str(i-1)+"]/propeller["+num2str(j-1)+"]/joint");
+    end
+    UAV_propellers_list{i} = temp_vec;
+end
+
+% place UAVs properly
+for i=1:N
+    temp_cell = cell(1,3);
+    for j=1:3; temp_cell{j} = reciever_INIT(i,j); end
+    sim.setObjectPosition(UAV_handels{i,1},sim.handle_world,temp_cell);
+end
+
+% place the transmitter
+temp_cell = cell(1,3);
+for i = 1:3; temp_cell{i} = transmitter_real_pos(i); end
+sim.setObjectPosition(transmitter_handle,sim.handle_world,temp_cell);
+
+% targets in position estimate
+for i = 1:N
+    temp_cell = cell(1,3);
+    for j = 1:3; temp_cell{j} = UAV_NET.UAVS{i}.X_ref(j); end
+    sim.setObjectPosition(UAV_handels{i,2},sim.handle_world,temp_cell);
+end
+
+client.setStepping(true);
+
+sim.startSimulation();
 
 %% MAINLOOP EXECUTION
 
 STEP = 1;
 K_STEP = 2;
 
-% start video recording
-if RECORD_VIDEO
-    this_time = string(datetime('now'));
-    vid_name = "MV-"+this_time;
-    vid_name = regexprep(vid_name," ",":");
-    vid_name = regexprep(vid_name,":","-");
-    writerObj = VideoWriter(vid_name,'MPEG-4');
-    % set the seconds per image
-    approx_magnitude = 1;
-    writerObj.FrameRate = 1/TIME_STEP;
-    % open the writer
-    open(writerObj);
-end
-
-% show computed trajs
-plotComputedTrajs;
-visualize_init;
 while t_simulation(STEP) < t_simulation(end)
 
     if ~USE_NMPC
@@ -241,10 +243,10 @@ while t_simulation(STEP) < t_simulation(end)
             last_replanning_transmitter_pos_hat = transmitter_pos_hat;
             K_STEP = 2; % reset steps
             NLPOnline; % solve again NLP
-            % show computed trajs
-            plotComputedTrajs;
-            % plot new estimated mission endtime
-            set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
+%             % show computed trajs
+%             plotComputedTrajs;
+%             % plot new estimated mission endtime
+%             set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
         end
         t_replanning = t_f-TIME_STEP; % reset timer
     
@@ -254,7 +256,7 @@ while t_simulation(STEP) < t_simulation(end)
     if COMPUTING_DEVICE_DELAY
         % compute centralized async system step
         available_pos_ode = extractPosOde(AS.pull_latest_info((STEP-1)*TIME_STEP));
-        available_pos = [available_pos_ode(:,1:2) zeros(size(available_pos_ode,1),1)];
+        available_pos = available_pos_ode(:,1:3);
 
         % compute new values ( with async sys measurment ) centralized
         H_num = H_function(available_pos);
@@ -282,6 +284,7 @@ while t_simulation(STEP) < t_simulation(end)
 
 
     if ~USE_NMPC
+        UAV_NET.refresh_nmpc_state(recievers_pos_ode,false);
         % set current reference point for UAVS
 %         reshape(squeeze(UAV_trajs(:,K_STEP,:)).',1,[]).'
 %         repmat([transmitter_pos_hat(1:2) 0 0 0],1,N).'
@@ -289,27 +292,35 @@ while t_simulation(STEP) < t_simulation(end)
         if K_STEP > temp_dim(2) % if trajs have ended stay at the end
             curr_traj = squeeze(UAV_trajs(:,end,:));
             curr_traj(:,3:4) = zeros(N,2);
-            UAV_references = reshape(curr_traj.',1,[]).';
+%             UAV_references = reshape(curr_traj.',1,[]).';
+            UAV_references = curr_traj;
         else
-            UAV_references = reshape(squeeze(UAV_trajs(:,K_STEP,:)).',1,[]).';
+%             UAV_references = reshape(squeeze(UAV_trajs(:,K_STEP,:)).',1,[]).';
+            UAV_references = squeeze(UAV_trajs(:,K_STEP,:));
         end
-
-        % simulate the UAVS (standard PD controller)
-        step_results = ode45( ...
-        UAV_TEAM(UAV_references,K_uavs_gain,total_A_matrix,total_B_matrix), ...
-              [0 TIME_STEP], ...
-              reshape(recievers_pos_ode.', 1, []));
+%         temp_refs = [1.25 0 0 0;3.75 0 0 0;6.25 0 0 0;8.75 0 0 0];
+        U_FL = UAV_NET.FL_UAV_TEAM_step(UAV_references);
+        for i = 1:N
+            control_UAV(sim,UAV_propellers_list{i},U_FL(i,:));
+        end
     else
         U_NMPC = UAV_NET.NMPC_UAV_TEAM_step();
-        step_results = ode45( ...
-        UAV_TEAM_NMPC(U_NMPC.',total_A_matrix,total_B_matrix), ...
-              [0 TIME_STEP], ...
-              reshape(recievers_pos_ode.', 1, []));
+        for i = 1:N
+            control_UAV(sim,UAV_propellers_list{i},U_NMPC(i,:));
+        end
     end
 
-    % extract integration results
-    recievers_pos_ode = reshape(step_results.y(:,end),4,N).';
-    recievers_pos = [ recievers_pos_ode(:,1:2) zeros(N,1)];
+    % coppelia sim integration step
+    client.step();
+    for i = 1:N
+        % get new recievers pos_ode
+        recievers_pos_ode(i,:) = getState(sim,UAV_handels{i,1});
+        % targets in position estimate
+        temp_cell = cell(1,3);
+        for j = 1:3; temp_cell{j} = UAV_NET.UAVS{i}.X_ref(j); end
+        sim.setObjectPosition(UAV_handels{i,2},sim.handle_world,temp_cell);
+    end
+    recievers_pos = recievers_pos_ode(:,1:3);
 
     % next step
     STEP = STEP + 1;
@@ -322,7 +333,7 @@ while t_simulation(STEP) < t_simulation(end)
         for i=1:N
             random_alpha = rand(1,1);
 %             delta_spawn_time = ( norm(recievers_pos(i,1:2) - estimation_device_pos(1:2))/medium_velocity ) + (2*random_alpha-1) * uncertain_time_range;
-            delta_spawn_time = ( norm(recievers_pos(i,1:2) - estimation_device_pos(1:2))/medium_velocity ) + random_alpha * uncertain_time_range;
+            delta_spawn_time = ( norm(recievers_pos(i,1:3) - estimation_device_pos(1:3))/medium_velocity ) + random_alpha * uncertain_time_range;
             spawn_time = (STEP-1)*TIME_STEP + delta_spawn_time;
             info_struct = {};
             info_struct.pos_ode = recievers_pos_ode(i,:);
@@ -338,7 +349,7 @@ while t_simulation(STEP) < t_simulation(end)
     % compute velocities and interdistances
     k = 1;
     for i = 1:N
-        VELOCITIES(end,i) = norm(recievers_pos_ode(i,3:4));
+        VELOCITIES(end,i) = norm(recievers_pos_ode(i,4:6));
         for j = i+1:N
             INTER_DISTANCES(end,k) = norm(recievers_pos(i,:)-recievers_pos(j,:));
             k = k + 1;
@@ -356,7 +367,7 @@ while t_simulation(STEP) < t_simulation(end)
     OI_VAL = [OI_VAL new_OI];
 
     % update estimate error and variation
-    my2_temp = norm(transmitter_pos_hat(1:2)-old_transmitter_pos_hat(1:2));
+    my2_temp = norm(transmitter_pos_hat-old_transmitter_pos_hat);
     TRANSMITTER_ESTIMATE_VARIATION = [TRANSMITTER_ESTIMATE_VARIATION my2_temp];
     TRANSMITTER_ESTIMATE_ERROR = [TRANSMITTER_ESTIMATE_ERROR norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
 
@@ -377,22 +388,11 @@ while t_simulation(STEP) < t_simulation(end)
         end
     end
 
-    % visualize step
-    pause(TIME_STEP);
-    visualize_update;
-
+%     % visualize step
+%     pause(TIME_STEP);
 end
 
-hold off;
-
-% stop and save video recorded
-if RECORD_VIDEO
-    if ~exist('./Movies', 'dir')
-           mkdir('./Movies');
-    end
-    close(writerObj);
-    movefile(vid_name+".mp4",'./Movies/.');
-end
+sim.stopSimulation();
 
 %% PLOTS
 
@@ -528,12 +528,46 @@ if USE_NMPC
     saveas(fig8,'./tmp_dir/CPU_TIME','epsc');
 end
 
-%% UAV DYNAMICS ODE
+%% functions
 
-function UAV_TEAM_ODE = UAV_TEAM(x_ref,K,p1,p2)
-    UAV_TEAM_ODE = @(t,x) p1*x+p2*K*(x_ref-x);
+function UAV_state = getState(sim,UAV)
+    T_temp = sim.getObjectMatrix(UAV,sim.handle_world);
+    x = zeros(1,3);
+    x(1) = double(T_temp{4});
+    x(2) = double(T_temp{8});
+    x(3) = double(T_temp{12});
+    R = zeros(3,3);
+    R(1,1) = double(T_temp{1}); 
+    R(1,2) = double(T_temp{2}); 
+    R(1,3) = double(T_temp{3});
+    R(2,1) = double(T_temp{5});
+    R(2,2) = double(T_temp{6});
+    R(2,3) = double(T_temp{7});
+    R(3,1) = double(T_temp{9});
+    R(3,2) = double(T_temp{10});
+    R(3,3) = double(T_temp{11});
+    
+%     rpy = rotm2eul(R,'ZYX');
+%     rpy = rpy(end:-1:1);
+
+    abg_cpsim = sim.getObjectOrientation(UAV,sim.handle_world);
+    [yaw,pitch,roll] = sim.alphaBetaGammaToYawPitchRoll(abg_cpsim{1},abg_cpsim{2},abg_cpsim{3});
+    rpy = [roll pitch yaw];
+
+    [dx,w] = sim.getObjectVelocity(UAV+sim.handleflag_axis,sim.handle_world);
+%     [dx_no_flag,w_no_flag] = sim.getObjectVelocity(UAV,sim.handle_world);
+    dx_mat = zeros(1,3);
+    w_mat = zeros(1,3);
+    for i = 1:3
+        dx_mat(i) = double(dx{i});
+        w_mat(i) = double(w{i});
+    end
+    w_mat = (R.' * w_mat.').';
+    UAV_state = [x dx_mat w_mat rpy];
 end
 
-function UAV_TEAM_ODE = UAV_TEAM_NMPC(U_NMPC,p1,p2)
-    UAV_TEAM_ODE = @(t,x) p1*x+p2*U_NMPC;
+function control_UAV(sim,UAV_propeller_list,controls)
+    for i = 1:length(UAV_propeller_list)
+        sim.setJointTargetVelocity(UAV_propeller_list(i),controls(i));
+    end
 end

@@ -32,7 +32,9 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
         temptemp = zeros(NUM_AGENTS,3);
         for i=1:mean_horizon
             for j=1:NUM_AGENTS
-                temptemp(j,1:2) = BernsteinPoly(squeeze(Bns(j,:,:)),(i-1)*TIME_STEP,0,t_f);
+%                 temptemp(j,1:2) = BernsteinPoly(squeeze(Bns(j,:,:)),(i-1)*TIME_STEP,0,t_f);
+                [~,prova] = deCasteljau(squeeze(Bns(j,:,:)),(i-1)*TIME_STEP/t_f);
+                temptemp(j,1:2) = prova.';
             end
             temp = H_function( temptemp );
             O = O + temp*temp.';

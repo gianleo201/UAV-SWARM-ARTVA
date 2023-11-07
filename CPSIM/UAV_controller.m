@@ -214,7 +214,7 @@ while timevec(STEP) < timevec(end)
 %     MAX_LIM = INV_MU*10*ones(4,1);
 %     MIN_LIM = zeros(4,1);
 %     % apply saturation function
-%     for i = 1:length(1); if U(i)< 0; U(i)=0; else; if U(i) > 10; U(i) = 10; end; end; end
+%     for i = 1:4; if U(i)< 0; U(i)=0; else; if U(i) > 10; U(i) = 10; end; end; end
 %     % update controller state
 %     FL_THRUST = FL_THRUST + FL_DTHRUST*0.05;
 %     FL_DTHRUST = FL_DTHRUST + T_mod(1)*0.05;

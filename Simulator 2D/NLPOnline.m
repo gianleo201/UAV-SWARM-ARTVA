@@ -1,3 +1,14 @@
+%% BUILD CONSTRAINTS
+
+CNSTR = buildConstraints(TIME_STEP, ...
+                         N, ...
+                         N_approx_bernstain, ...
+                         recievers_pos_ode, ...
+                         transmitter_pos_hat(1:2), ...
+                         d_t, ...
+                         d_safe, ...
+                         v_max);
+
 %% BUILD INITIAL GUESS
 
 NLP_Bns_X0 = zeros(N,2,N_approx_bernstain+1);
@@ -50,7 +61,7 @@ for i=1:N
     NLP_Bns_X0(i,:,2) = NLP_Bns_X0(i,:,1).' + ...
             (NLP_tf_X0/N_approx_bernstain) * recievers_pos_ode(i,3:4).';
 
-    % reach the area of the estimated transmitted position divided in
+    % reach the area of the estimated transmitted position divided in radial
     % sectors (to each drone the nearest sector)
     i_th_angle = (sector_assignments(i)-1)*DELTA_angle;
     i_th_final = transmitter_pos_hat(1:2)+1.25*r_safe*[cos(i_th_angle) sin(i_th_angle)];
@@ -119,13 +130,20 @@ for i=1:N
 %         end
 %     end
 
-    % assign remaining points to a straight trejectory with 0 final
-    % velocity
-    NLP_Bns_X0(i,:,N_approx_bernstain) = NLP_Bns_X0(i,:,N_approx_bernstain+1); % final velocity = 0
+    % assign remaining points to a straight trejectory from start to
+    % i_th_final
     temp_traj = i_th_final-recievers_pos_ode(i,1:2);
-    for kth=3:N_approx_bernstain-1
-        NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-2))*temp_traj;
+    for kth=3:N_approx_bernstain
+        NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-1))*temp_traj;
     end
+
+%     % assign remaining points to a straight trejectory with 0 final
+%     % velocity
+%     NLP_Bns_X0(i,:,N_approx_bernstain) = NLP_Bns_X0(i,:,N_approx_bernstain+1); % final velocity = 0
+%     temp_traj = i_th_final-recievers_pos_ode(i,1:2);
+%     for kth=3:N_approx_bernstain-1
+%         NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-2))*temp_traj;
+%     end
 
 %     % overwrite all previous mods
 %     for kth=3:N_approx_bernstain+1
@@ -134,33 +152,55 @@ for i=1:N
 
 end
 
-% peek initial trajectories ( before optimizations )
-Bns = NLP_Bns_X0;
-ComputeTrajs;
-plotComputedTrajs;
-
-%% BUILD CONSTRAINTS
-
-CNSTR = buildConstraints(min_feasable_tf, ...
-                         N, ...
-                         N_approx_bernstain, ...
-                         recievers_pos_ode, ...
-                         transmitter_pos_hat(1:2), ...
-                         d_t, ...
-                         d_safe, ...
-                         v_max);
-
 %% NLP
 
-% set initial conditions
-problem.x0 = [NLP_tf_X0+TIME_STEP reshape(NLP_Bns_X0,1,[])];
+% set initial guess
+problem.x0 = [NLP_tf_X0 reshape(NLP_Bns_X0,1,[])];
+
+% set linear constraints
+vec_length = length(reshape(NLP_Bns_X0,1,[]))+1;
+num_eq_constr = 4*N;
+A_clin = zeros(num_eq_constr,vec_length);
+B_clin = zeros(num_eq_constr,1);
+p = 1;
+for k=1:N
+    for i=1:2
+        for j = 1:N_approx_bernstain+1
+            curr_i = (k-1)+(i-1)*N+(j-1)*2*N+1;
+            if j==1
+                A_clin(p,curr_i+1) = 1;
+                B_clin(p) = recievers_pos_ode(k,i);
+                p = p + 1;
+            elseif j==2
+                A_clin(p,curr_i+1) = 1;
+                A_clin(p,1) = -recievers_pos_ode(k,2+i)/N_approx_bernstain;
+                relative_curr_pos = (k-1)+(i-1)*N+1;
+                A_clin(p,relative_curr_pos+1) = -1;
+                p = p + 1;
+            end
+        end
+    end
+end
+problem.Aeq = A_clin;
+problem.beq = B_clin;
+
+A_clin_ineq = zeros(1,vec_length);
+A_clin_ineq(1) = -1;
+B_clin_ineq = -min_feasable_tf;
+problem.Aineq = A_clin_ineq;
+problem.bineq = B_clin_ineq;
+
+
+% set nonlinear constraints
 problem.nonlcon = CNSTR;
 
 % % change weights
 % problem.OF = buildObjectiveFunction(ObjectiveWeights .* [1 0 0] ...
 %                                     ,N,TIME_STEP,N_approx_bernstain);
 
+tic;
 [x_opt,f_opt] = fmincon(problem);
+fprintf("Total elpsed time to solve minimization problem: %d\n",toc);
 
 % save results
 t_f = x_opt(1);

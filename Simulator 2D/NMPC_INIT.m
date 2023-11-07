@@ -29,11 +29,15 @@ CHECK_neigh = {zeros(N,3),N,zeros(N,3),1,d_safe,v_max};
 [coreData,onlineData] = getCodeGenerationData(Drone_NMPC,CHECK_X0.',CHECK_U0.',CHECK_neigh);
 onlineData.ref = [1 1 0 0];
 
-LAST_N = load("LAST_N.mat");
+lst_N_exist = false;
+if exist("LAST_N.mat","file")
+    LAST_N = load("LAST_N.mat");
+    lst_N_exist = true;
+end
 
 if ~USE_NMPC
     fprintf("NMPC not used in the simulation. No NMPC code generation\n");
-elseif LAST_N.N == N && ~NMPC_MODIFIED
+elseif lst_N_exist && LAST_N.N == N && ~NMPC_MODIFIED
     fprintf("NMPC code already generated for %d UAVs\n",N);
     return;
 else

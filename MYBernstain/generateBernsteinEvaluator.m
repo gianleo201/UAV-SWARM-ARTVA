@@ -1,7 +1,5 @@
 %% set up optimization problem
 
-EnvINIT;
-
 % choose the weights
 functional_weights = [1 1 1];
 
@@ -22,10 +20,12 @@ for i=1:N
     end
 end
 
-matlabFunction(BnTraj_,"File","Bernstein_eval","vars",{t,tf,Bns});
-matlabFunction(simplify(diff(BnTraj_,t)),"File","D_Bernstein_eval","vars",{t,tf,Bns});
+file_path = fileparts(mfilename("fullpath"))+"\";
+
+matlabFunction(BnTraj_,"File",file_path+"Bernstein_eval","vars",{t,tf,Bns});
+matlabFunction(simplify(diff(BnTraj_,t)),"File",file_path+"D_Bernstein_eval","vars",{t,tf,Bns});
 DD_BnTraj_ = simplify(diff(BnTraj_,t,2)); % second order derivatives
-matlabFunction(DD_BnTraj_,"File","DD_Bernstein_eval","vars",{t,tf,Bns});
+matlabFunction(DD_BnTraj_,"File",file_path+"DD_Bernstein_eval","vars",{t,tf,Bns});
 
 % symbolic expressions of integral of norms
 
@@ -35,4 +35,4 @@ for i=1:N
     Integral_expr(i) = simplify(int(norm(DD_BnTraj_(i,:))^2,t,0,tf));
 end
 
-matlabFunction(Integral_expr,"File","Integral_expr_eval","vars",{tf,Bns});
+matlabFunction(Integral_expr,"File",file_path+"Integral_expr_eval","vars",{tf,Bns});

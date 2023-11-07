@@ -1,0 +1,11 @@
+a = 0.1838;
+b = 0.1838;
+Jxx = 0.0040;
+Jyy = 0.0049;
+Jzz = 0.0089;
+m = 0.52;
+g = 9.81;
+rT = 0.001;
+rD = 0.00001;
+rD_vz = 0.00001;
+model_params = [a b Jxx Jyy Jzz m g rT rD rD_vz];

@@ -2,13 +2,14 @@ NMPC_MODIFIED = false;
 
 Drone_NMPC = nlmpc(12,4,'MV',[1 2 3 4]);
 
-N = 5;
-d_safe = 2;
-v_max = 5;
+% N = 5;
+% d_safe = 2;
+% v_max = 5;
 
-Drone_NMPC.Ts = 0.05;
-Drone_NMPC.PredictionHorizon = 10;
-Drone_NMPC.ControlHorizon = 5;
+% Drone_NMPC.Ts = 0.05;
+Drone_NMPC.Ts = TIME_STEP;
+Drone_NMPC.PredictionHorizon = 5;
+Drone_NMPC.ControlHorizon = 2;
 
 Drone_NMPC.Model.NumberOfParameters = 7;
 Drone_NMPC.Optimization.CustomCostFcn = "quadrotor_ObjFunction";
@@ -46,7 +47,7 @@ CHECK_PARAMS = {zeros(N,3),0,zeros(N,3),0,d_safe,v_max,model_params};
 Drone_NMPC.validateFcns(CHECK_X0.',CHECK_U0.',[],CHECK_PARAMS,[0 0 2 0]);
 
 [coreData,onlineData] = getCodeGenerationData(Drone_NMPC,CHECK_X0.',CHECK_U0.',CHECK_PARAMS);
-onlineData.ref = [0 0 2 0 0 0];
+onlineData.ref = [0 0 2 0];
 
 if ~NMPC_MODIFIED
     fprintf("NMPC code already generated for %d UAVs\n",N);
