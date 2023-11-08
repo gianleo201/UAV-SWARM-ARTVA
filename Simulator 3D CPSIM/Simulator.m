@@ -11,8 +11,8 @@ recievers_pos_ode = [reciever_INIT(:,1:3) zeros(N,9)];
 recievers_pos_ode_history = zeros(END_TIME/TIME_STEP,N,12);
 recievers_pos_ode_history(1,:,:) = recievers_pos_ode;
 
-a = 1;
-b = 2;
+a = 1.2920;
+b = 1.0275;
 M_real = diag([b^2 a^2 a^2]);
 
 % RLS algorithm setup

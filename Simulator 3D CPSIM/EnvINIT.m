@@ -3,11 +3,11 @@ close all;
 
 %% EXECUTION FLAGS
 
-NLP_PLANNING = true;
+NLP_PLANNING = false;
 DOUBLE_PHASE = false;
 RECORD_VIDEO = false;
-COMPUTING_DEVICE_DELAY = false;
-USE_NMPC = false;
+COMPUTING_DEVICE_DELAY = true;
+USE_NMPC = true;
 EXPLORATION_TYPE = "V";  %% select one in the following string list ["V","H","R"]
 
 %% ENVIRONMENT INITIALIZATION

@@ -50,11 +50,11 @@ function J = quadrotor_ObjFunction(X,U,e,data,neigh_pos,N_neighbours,non_neigh_p
 
     XNeigh = zeros(p,3*N_neighbours);
     for i = 1:N_neighbours
-        XNeigh(:,3*i-2:3*i) = repmat(neigh_pos(i,1:3),p,1);
+        XNeigh(:,3*i-2:3*i) = repmat(neigh_pos(i,1:3),p,1); % assuming constant position of obstacle along prediction horizon
     end
     XNNeigh = zeros(p,3*N_non_neighbours);
     for i = 1:N_non_neighbours
-        XNNeigh(:,3*i-2:3*i) = repmat(non_neigh_pos(i,1:3),p,1);
+        XNNeigh(:,3*i-2:3*i) = repmat(non_neigh_pos(i,1:3),p,1); % % assuming constant position of obstacle along prediction horizon
     end
 
     XS = [X1 X2 X3];
@@ -123,14 +123,14 @@ function J = quadrotor_ObjFunction(X,U,e,data,neigh_pos,N_neighbours,non_neigh_p
     
     % weights
     Wx = (1/(d_safe))^2;
-    Wdx = (1/(v_max/2))^2;
+    Wdx = (1/(v_max))^2;
     Wu = (1/(10-U_ref(1)))^2;
-    We = (1/(d_safe))^2;
+    We = (1/(2*d_safe))^2;
 %     Wxnid = (0.1*d_safe)^2;
     Wxnid = (d_safe)^2;
 %     Wxnid = 0;
 %     Wxnid = (10)^2;
-    Wsigma = (1e-02)^2;
+    Wsigma = (1e-06)^2;
 %     Wsigma = (10)^2;
 %     Wsigma = 0;
 
@@ -145,7 +145,7 @@ function J = quadrotor_ObjFunction(X,U,e,data,neigh_pos,N_neighbours,non_neigh_p
 %         Wu * sum((U1-U_ref).^2+(U2-U_ref).^2+(U3-U_ref).^2+(U4-U_ref).^2) + ...
 %         We * e.^2 + ...
 %         Wxnid * (XID + XNID) - ...
-%         Wsigma * sigma_lower; % 1.1667 W_sigma per drone
+%         Wsigma * sigma_lower;
 
     J = Wx * sum((X1_ref-X1).^2) + ...
         Wx * sum((X2_ref-X2).^2) + ...
@@ -157,6 +157,6 @@ function J = quadrotor_ObjFunction(X,U,e,data,neigh_pos,N_neighbours,non_neigh_p
         Wu * sum((U1-U_ref).^2+(U2-U_ref).^2+(U3-U_ref).^2+(U4-U_ref).^2) + ...
         We * e.^2 + ...
         Wxnid * (XID + XNID) - ...
-        Wsigma * sigma_lower; % 1.1667 W_sigma per drone
+        Wsigma * sigma_lower;
 
 end

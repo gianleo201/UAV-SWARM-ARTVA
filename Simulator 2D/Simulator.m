@@ -40,8 +40,8 @@ recievers_pos_ode = [reciever_INIT(:,1:2) zeros(N,2)];
 recievers_pos_ode_history = zeros(END_TIME/TIME_STEP,N,4);
 recievers_pos_ode_history(1,:,:) = recievers_pos_ode;
 
-a = 1;
-b = 2;
+a = 1.2920;
+b = 1.0275;
 M_real = diag([b^2 a^2 a^2]);
 
 % RLS algorithm setup
@@ -52,14 +52,14 @@ beta_ff = 0.99; % forgetly factor
 % S_RLS = diag([1 1 1 1 1 1 ...
 %              (hl_length^2)/12 (hl_length^2)/12 1 ...
 %              (hl_length^4)/9]); % initial covariance matrix
-S_RLS = diag([10 10 10 10 10 10 ...
+S_RLS = diag([1 1 1 1 1 1 ...
              (hl_length^2)/12 (hl_length^2)/12 10 ...
              (hl_length^4)/9]); % initial covariance matrix
 % transmitter_pos_hat = [0 0 0]; % initial guess for the transmitter
 last_replanning_transmitter_pos_hat = transmitter_pos_hat; % keep memory at each replanning
-M_hat = [4     0    0;
-         0     1    0;
-         0     0    1];
+M_hat = [b^2   0      0;
+         0     a^2    0;
+         0     0    a^2];
 % m_11 m_12 m_13 m_22 m_23 m_33 p_t_bar rho
 X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
         (M_hat*transmitter_pos_hat.').' ...
@@ -70,7 +70,7 @@ X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
 t_f = 30; % [s]  ( first estimated mission time )
 d_t = 5; % [m]
 % ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
-ObjectiveWeights = [1 1e-06/N 1e-12/N];
+ObjectiveWeights = [1 1e-06/N 1e-04/N];
 % ObjectiveWeights = [1 1e-02 1e-01];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
@@ -80,7 +80,11 @@ problem.solver = 'fmincon';
 %                 "Display","iter-detailed",...
 %                 "OptimalityTolerance",1e-02);
 
-problem.options = optimoptions("fmincon","Display","iter-detailed");
+problem.options = optimoptions("fmincon",...
+                "Display","iter-detailed",...
+                "EnableFeasibilityMode",true,...
+                "SubproblemAlgorithm","cg",...
+                "OptimalityTolerance",1e-04);
 
 % problem.options = optimoptions("fmincon",...
 %                 "Display","iter-detailed",...

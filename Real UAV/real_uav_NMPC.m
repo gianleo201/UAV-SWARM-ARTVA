@@ -25,11 +25,13 @@ for i = 1:4
     Drone_NMPC.MV(i).Min = 0;
     Drone_NMPC.MV(i).Max = 10; %N max thrust
 end
-% constraint on pitch angle ( avoid gimball problem )
+% constraint on pitch angle ( avoid gimbal problem )
 Drone_NMPC.States(10).Min = -0.9*pi/2;
 Drone_NMPC.States(10).Max = 0.9*pi/2;
 Drone_NMPC.States(11).Min = -0.9*pi/2;
 Drone_NMPC.States(11).Max = 0.9*pi/2;
+% constraints on height
+Drone_NMPC.States(3).Min = 0.05;
 
 % (debug) assign output weights
 % Drone_NMPC.Weights.ManipulatedVariables = [0.1 0.1 0.1 0.1];

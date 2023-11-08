@@ -121,6 +121,25 @@ classdef UAVNetwork < handle
                 obj.UAVS{i}.X_ref = [obj.UAVS{i}.transmitter_pos_hat];
                 obj.UAVS{i}.prediction_horizon = NMPC_handle.PredictionHorizon;
                 obj.UAVS{i}.CPU_TIME = [];
+
+                %% sigma travelled
+                H_temp = zeros(10,num_neigh+1);
+                if ~obj.THREE_DIMENSIONAL
+                    H_temp(:,1) = single_H_function([obj.UAVS{i}.X(1:2) 0]);
+                else
+                    H_temp(:,1) = single_H_function(obj.UAVS{i}.X(1:3));
+                end
+                for k = 1:num_neigh
+                    if ~obj.THREE_DIMENSIONAL
+                        H_temp(:,k) = single_H_function([neigh(k,1:2) 0]);
+                    else
+                        H_temp(:,k) = single_H_function(neigh(k,1:3));
+                    end
+                end
+                O_sum = H_temp*H_temp.';
+                obj.UAVS{i}.O_sum = O_sum;
+                obj.UAVS{i}.sigma_travelled = min_sv_O(obj.UAVS{i}.O_sum,num_neigh+1);
+                obj.UAVS{i}.k_for_O = 1;
             end
 
             %% initialize FL controller
@@ -293,8 +312,8 @@ classdef UAVNetwork < handle
                 % apply saturation function
                 for j = 1:4; if U(j)< 0; U(j)=0; else; if U(j) > 10; U(j) = 10; end; end; end
                 % update controller state
-                obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
                 obj.UAVS{i}.FL_DTHRUST = obj.UAVS{i}.FL_DTHRUST + T_mod(1)*obj.TIME_STEP;
+                obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
                 Us(i,:) = U;
             end
         end
@@ -339,7 +358,8 @@ classdef UAVNetwork < handle
                     if ~obj.THREE_DIMENSIONAL
                         obj.UAVS{i}.U = - obj.UAVS{i}.X(3:4); % stop the UAV
                     else
-                        obj.UAVS{i}.U = - obj.UAVS{i}.X(4:6); % stop the UAV
+%                         obj.UAVS{i}.U = - obj.UAVS{i}.X(4:6); % stop the UAV
+                        obj.UAVS{i}.U = nmpc_mv.';
                     end
 %                     obj.UAVS{i}.U = nmpc_mv.';
                     obj.UAVS{i}.OD = new_OD; % do not modify online data
@@ -410,6 +430,26 @@ classdef UAVNetwork < handle
                 obj.UAVS{i}.OD.Parameters{2} = num_neigh;
                 obj.UAVS{i}.OD.Parameters{3} = non_neigh;
                 obj.UAVS{i}.OD.Parameters{4} = num_non_neigh;
+
+                %% sigma travelled
+                H_temp = zeros(10,num_neigh+1);
+                if ~obj.THREE_DIMENSIONAL
+                    H_temp(:,1) = single_H_function([obj.UAVS{i}.X(1:2) 0]);
+                else
+                    H_temp(:,1) = single_H_function(obj.UAVS{i}.X(1:3));
+                end
+                for k = 1:num_neigh
+                    if ~obj.THREE_DIMENSIONAL
+                        H_temp(:,k) = single_H_function([neigh(k,1:2) 0]);
+                    else
+                        H_temp(:,k) = single_H_function(neigh(k,1:3));
+                    end
+                end
+                O_k = H_temp*H_temp.';
+                obj.UAVS{i}.k_for_O = obj.UAVS{i}.k_for_O + 1; 
+                obj.UAVS{i}.O_sum = obj.UAVS{i}.O_sum + (O_k - obj.UAVS{i}.O_sum)/obj.UAVS{i}.k_for_O;
+                obj.UAVS{i}.sigma_travelled = min_sv_O(obj.UAVS{i}.O_sum,num_neigh+1);
+
             end
         end
 
@@ -423,25 +463,39 @@ classdef UAVNetwork < handle
                 end
 
                 cur_pos_hat = obj.UAVS{i}.transmitter_pos_hat;
-                last_pos_hat = obj.UAVS{i}.last_trustable_transmitter_pos_hat;
+                last_pos_hat = obj.UAVS{i}.last_transmitter_pos_hat;
+                last_trustable_pos_hat = obj.UAVS{i}.last_trustable_transmitter_pos_hat;
                 if ~obj.THREE_DIMENSIONAL
                     cur_pos_hat = cur_pos_hat(1:2);
                     last_pos_hat = last_pos_hat(1:2);
+                    last_trustable_pos_hat = last_trustable_pos_hat(1:2);
                 end
                 
                 estimate_var = norm(cur_pos_hat - last_pos_hat);
-                norm_var = 0.2;
-%                 obj.UAVS{i}.T_REPLANNING = obj.UAVS{i}.T_REPLANNING - exp(estimate_var-norm_var) * obj.TIME_STEP;
-                obj.UAVS{i}.T_REPLANNING = obj.UAVS{i}.T_REPLANNING - obj.TIME_STEP;
+                norm_var = 1;
+                obj.UAVS{i}.T_REPLANNING = obj.UAVS{i}.T_REPLANNING - exp(estimate_var-norm_var) * obj.TIME_STEP;
+%                 obj.UAVS{i}.T_REPLANNING = obj.UAVS{i}.T_REPLANNING - obj.TIME_STEP;
 
-                if  obj.UAVS{i}.T_REPLANNING <= 0
+                if  obj.UAVS{i}.T_REPLANNING <= 0 ...
+                    && (obj.UAVS{i}.sigma_travelled <= 0.7 * obj.NUM_UAVS || norm(cur_pos_hat-last_trustable_pos_hat) > 10)
+                    
+                    % reset timer
                     obj.UAVS{i}.T_REPLANNING = 10;
+
+                    % reset observability index consumed up to now
+                    obj.UAVS{i}.k_for_O = 0;
+                    obj.UAVS{i}.O_sum = zeros(10,10);
+                    obj.UAVS{i}.sigma_travelled = 0;
+
+                    % change reference point
 %                     obj.UAVS{i}.OD.ref = [obj.UAVS{i}.transmitter_pos_hat(1:2) 0 0];
                     if ~obj.THREE_DIMENSIONAL
                         obj.UAVS{i}.X_ref = [obj.UAVS{i}.transmitter_pos_hat(1:2) 0];
                     else
                         obj.UAVS{i}.X_ref = [obj.UAVS{i}.transmitter_pos_hat(1:2) obj.UAVS{i}.transmitter_pos_hat(3)+3];
                     end
+                    
+                    % update last trustable transmitter position estimate
                     obj.UAVS{i}.last_trustable_transmitter_pos_hat = obj.UAVS{i}.transmitter_pos_hat;
                 end
 

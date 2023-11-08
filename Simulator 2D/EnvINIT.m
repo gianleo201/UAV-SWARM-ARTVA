@@ -4,11 +4,11 @@ close all;
 %% EXECUTION FLAGS
 
 NLP_PLANNING = false;
-DOUBLE_PHASE = true;
+DOUBLE_PHASE = false;
 RECORD_VIDEO = false;
 COMPUTING_DEVICE_DELAY = true;
-USE_NMPC = false;
-EXPLORATION_TYPE = "V";  %% select one in the following string list ["V","H","R"]
+USE_NMPC = true;
+EXPLORATION_TYPE = "R";  %% select one in the following string list ["V","H","R"]
 
 %% ENVIRONMENT INITIALIZATION
 
