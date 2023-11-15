@@ -89,12 +89,12 @@ for i=1:N
 end
 
 % save functions
-file_path = fileparts(mfilename("fullpath"))+"\";
+% file_path = fileparts(mfilename("fullpath"))+"\";
 
 % matlabFunction(PHI,"File","single_H_function","vars",{[p_r_x p_r_y p_r_z]});
-matlabFunction(H,"File",file_path+"H_function","vars",{p_r});
+% matlabFunction(H,"File",file_path+"H_function","vars",{p_r});
 
 % matlabFunction(Y(1),"File","single_Y_function","vars",{p_r(1,:), p_t, [a b], [m_11 m_12 m_13 m_22 m_23 m_33], m, w_noise});
-matlabFunction(Y,"File",file_path+"Y_function","vars",{p_r, p_t, [a b], [m_11 m_12 m_13 m_22 m_23 m_33], m, w_noise});
+% matlabFunction(Y,"File",file_path+"Y_function","vars",{p_r, p_t, [a b], [m_11 m_12 m_13 m_22 m_23 m_33], m, w_noise});
 
-matlabFunction(DELTAS,"File",file_path+"DELTA_function","vars",{p_r, p_t, [a b]});
+% matlabFunction(DELTAS,"File",file_path+"DELTA_function","vars",{p_r, p_t, [a b]});

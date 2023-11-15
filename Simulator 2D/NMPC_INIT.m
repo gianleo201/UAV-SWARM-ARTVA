@@ -1,4 +1,4 @@
-NMPC_MODIFIED = false;
+NMPC_MODIFIED = true;
 
 Drone_NMPC = nlmpc(4,4,2);
 
@@ -13,14 +13,13 @@ Drone_NMPC.Jacobian.StateFcn = "UAV_dynamics_jacobian";
 Drone_NMPC.Model.OutputFcn = "UAV_output";
 Drone_NMPC.Jacobian.OutputFcn = "UAV_output_jacobian";
 Drone_NMPC.Optimization.CustomIneqConFcn = "IneqConstriant";
-Drone_NMPC.Optimization.SolverOptions.Algorithm = 'sqp';
 
 % initial state
 CHECK_X0 = [-5 -5 0 0];
 % initial guess for control input
 CHECK_U0 = [0 0];
 % parameter cell vector sample
-CHECK_neigh = {zeros(N,3),N,zeros(N,3),1,d_safe,v_max};
+CHECK_neigh = {zeros(3*N,3),N,zeros(3,3),1,d_safe,v_max};
 
 % validate nlmpc algorithm
 % Drone_NMPC.validateFcns(CHECK_X0.',CHECK_U0.',[],CHECK_neigh,[1 1 0 0]);
@@ -46,6 +45,7 @@ else
     mexConfig.IntegrityChecks = true;
     % build c code and executable
     buildMEX(Drone_NMPC,"NMPC_UAV",coreData,onlineData,mexConfig);
+    save LAST_N.mat N;
 end
 
 clear CHECK_X0 CHECK_U0 CHECK_neigh onlineData LAST_N;

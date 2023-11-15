@@ -6,7 +6,7 @@ function sigma_lower = OI_function(pos_history)
     O = zeros(10,10);
 %     O = zeros(N,N);
     for i=1:mean_horizon
-        temp = H_function( [squeeze(pos_history(i,:,:)) zeros(N,1)] );
+        temp = H_function(N, [squeeze(pos_history(i,:,:)) zeros(N,1)] );
         O = O + temp*temp.';
 %         O = O + temp.'*temp;
     end

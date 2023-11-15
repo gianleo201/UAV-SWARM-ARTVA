@@ -6,14 +6,16 @@ close all;
 NLP_PLANNING = false;
 DOUBLE_PHASE = false;
 RECORD_VIDEO = false;
-COMPUTING_DEVICE_DELAY = true;
+COMPUTING_DEVICE_DELAY = false;
 USE_NMPC = true;
 EXPLORATION_TYPE = "V";  %% select one in the following string list ["V","H","R"]
+CODE_GENERATED_NLP = true;
+NLP_AND_NMPC = true;
 
 %% ENVIRONMENT INITIALIZATION
 
 % set up number of reciever agent
-N = 4;
+N = 5;
 
 % set transimetter initial position
 % orientation is not of interest, imagine the transmitter frame parallel to the inertial one
@@ -72,7 +74,7 @@ end
 
 %% SIMULATION TIME
 
-END_TIME = 50; % secs 2 mins of simulation
+END_TIME = 120; % secs 2 mins of simulation
 TIME_STEP = 0.05; % secs
 t_simulation = 0:TIME_STEP:END_TIME;
 

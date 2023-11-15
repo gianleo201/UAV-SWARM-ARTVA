@@ -36,7 +36,7 @@ function resFunction = buildObjectiveFunction(W, NUM_AGENTS, TIME_STEP, N_approx
                 [~,prova] = deCasteljau(squeeze(Bns(j,:,:)),(i-1)*TIME_STEP/t_f);
                 temptemp(j,1:2) = prova.';
             end
-            temp = H_function( temptemp );
+            temp = H_function(NUM_AGENTS,temptemp );
             O = O + temp*temp.';
         end
         O = (1/mean_horizon)*O;

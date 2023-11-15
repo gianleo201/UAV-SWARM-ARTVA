@@ -1,4 +1,4 @@
-ENABLE_FUNCTION_GENERATION = false;
+ENABLE_FUNCTION_GENERATION = true;
 RPY_FIXED_AXIS = true;
 CHANGE_OF_INPUT = false;
 
@@ -122,7 +122,7 @@ quadrotor_model_y = [x y z psi].';
 quadrotor_model_y_jac_x = jacobian(quadrotor_model_y,sym_model_state);
 quadrotor_model_y_jac_u = jacobian(quadrotor_model_y,sym_model_inputs);
 
-%%
+%% build FL
 
 if CHANGE_OF_INPUT
 
@@ -203,6 +203,20 @@ if CHANGE_OF_INPUT
 
 end
 
+%% build 2nd order exponential CBF
+
+if ~CHANGE_OF_INPUT  
+    syms x_obs y_obs z_obs x_obs_dot y_obs_dot z_obs_dot x_obs_ddot y_obs_ddot z_obs_ddot d_dist k_0 k_1 real;
+    
+    p_obs = [x_obs y_obs z_obs].';
+    p_obs_dot = [x_obs_dot y_obs_dot z_obs_dot].';
+    p_obs_ddot = [x_obs_ddot y_obs_ddot z_obs_ddot].';
+    
+    h_f = norm([x;y;z]-p_obs) - d_dist;
+    h_f_dot = simplify(jacobian(h_f,sym_model_state)*quadrotor_model + jacobian(h_f,p_obs)*p_obs_dot);
+    h_f_ddot = simplify(jacobian(h_f_dot,sym_model_state)*quadrotor_model + jacobian(h_f_dot,[p_obs;p_obs_dot])*[p_obs_dot;p_obs_ddot]);
+end
+
 %% generate functions
 
 if ~ENABLE_FUNCTION_GENERATION
@@ -221,6 +235,8 @@ matlabFunction(quadrotor_model,'file','quadrotor_model.m','vars',{sym_model_stat
 matlabFunction(quadrotor_model_jac_x,quadrotor_model_jac_u,'file','quadrotor_model_jac.m','vars',{sym_model_state,sym_model_inputs,additional_INs{:},sym_model_params},'Outputs',{'J_f_x','J_f_u'},'optimize',false);
 matlabFunction(quadrotor_model_y,'file','quadrotor_output.m','vars',{sym_model_state,sym_model_inputs,additional_INs{:},sym_model_params},'optimize',false);
 matlabFunction(quadrotor_model_y_jac_x, quadrotor_model_y_jac_u,'file','quadrotor_output_jac.m','vars',{sym_model_state,sym_model_inputs,additional_INs{:},sym_model_params},'Outputs',{'J_y_x','J_y_u'},'optimize',false);
+% CBF generation
+matlabFunction(-(h_f_ddot+k_1*h_f_dot+k_0*h_f),'file','real_UAV_CBF','vars',{sym_model_state,sym_model_inputs,sym_model_params,p_obs,p_obs_dot,p_obs_ddot,d_dist,k_0,k_1});
 
 % % correct the sintax to be used in simulink
 % correctSintax('./lin_motion.m');

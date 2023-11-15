@@ -1,7 +1,6 @@
 
 clear;
 EnvINIT; % initialize environment
-MagneticFieldSensors; % build Symbolically H matrix
 
 %% UAVS DYNAMICS (symilified to double integrators)
 
@@ -70,31 +69,29 @@ X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
 t_f = 30; % [s]  ( first estimated mission time )
 d_t = 5; % [m]
 % ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
-ObjectiveWeights = [1 1e-06/N 1e-04/N];
+ObjectiveWeights = [1e-02 10/N 1e-06/N];
 % ObjectiveWeights = [1 1e-02 1e-01];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
 problem.solver = 'fmincon';
 
-% problem.options = optimoptions("fmincon", ...
-%                 "Display","iter-detailed",...
-%                 "OptimalityTolerance",1e-02);
-
 problem.options = optimoptions("fmincon",...
-                "Display","iter-detailed",...
-                "EnableFeasibilityMode",true,...
-                "SubproblemAlgorithm","cg",...
-                "OptimalityTolerance",1e-04);
+                "Algorithm","active-set",...
+                "Display","iter-detailed");
 
 % problem.options = optimoptions("fmincon",...
+%                 "Algorithm","active-set",...
 %                 "Display","iter-detailed",...
 %                 "EnableFeasibilityMode",true,...
-%                 "SubproblemAlgorithm","cg",...
-%                 "OptimalityTolerance",1e-02);
+%                 "SubproblemAlgorithm","cg");
 
 if ~USE_NMPC
     if NLP_PLANNING
-        NLPOnline; % solve NLP
+        if CODE_GENERATED_NLP
+            NLPOnline_mex; % solve NLP from c generated code;
+        else
+            NLPOnline; % solve NLP
+        end
     else
         if EXPLORATION_TYPE == "R"
             L_t = 0.75*hl_length; % for radial exploration
@@ -138,7 +135,7 @@ for i = 1:N
 end
 
 % obsevability index
-my_temp = H_function(recievers_pos);
+my_temp = H_function(N,recievers_pos);
 my_temp = my_temp*my_temp.';
 last_matrix_sum = my_temp;
 my_temp = min_sv_O(last_matrix_sum,min([N,10]));
@@ -183,7 +180,7 @@ UAV_NET = UAVNetwork(N, ...
                      recievers_pos_ode, ...
                      X_hat, ...
                      S_RLS, ...
-@(x) Y_function(x,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0), ...
+@(Ns,x) Y_function(Ns,x,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0), ...
                      Drone_NMPC, ...
                      d_safe, ...
                      v_max);
@@ -247,7 +244,11 @@ while t_simulation(STEP) < t_simulation(end)
             OPI <= SIGMA_TRESHOLD
             last_replanning_transmitter_pos_hat = transmitter_pos_hat;
             K_STEP = 2; % reset steps
-            NLPOnline; % solve again NLP
+            if CODE_GENERATED_NLP
+                NLPOnline_mex; % solve NLP from c generated code;
+            else
+                NLPOnline; % solve NLP
+            end
             % show computed trajs
             plotComputedTrajs;
             % plot new estimated mission endtime
@@ -264,15 +265,15 @@ while t_simulation(STEP) < t_simulation(end)
         available_pos = [available_pos_ode(:,1:2) zeros(size(available_pos_ode,1),1)];
 
         % compute new values ( with async sys measurment ) centralized
-        H_num = H_function(available_pos);
-        Y_num = Y_function(available_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
+        H_num = H_function(N,available_pos);
+        Y_num = Y_function(N,available_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
 
         % compute new values decentralized
         UAV_NET.DRLS(beta_ff,Y_num,H_num,true,(STEP-1)*TIME_STEP);
     else 
         % compute new values centralized
-        H_num = H_function(recievers_pos);
-        Y_num = Y_function(recievers_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
+        H_num = H_function(N,recievers_pos);
+        Y_num = Y_function(N,recievers_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
 
         % compute new values decentralized
         UAV_NET.DRLS(beta_ff,Y_num,H_num,false);
@@ -356,7 +357,7 @@ while t_simulation(STEP) < t_simulation(end)
     recievers_pos_ode_history(STEP,:,:) = recievers_pos_ode;
 
     % update Observability index value
-    my_temp = H_function(recievers_pos);
+    my_temp = H_function(N,recievers_pos);
     my_temp = my_temp*my_temp.';
     last_matrix_sum = last_matrix_sum + (my_temp - last_matrix_sum)/STEP;
     new_OI = min_sv_O(last_matrix_sum,min([N,10]));

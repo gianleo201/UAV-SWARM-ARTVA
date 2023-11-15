@@ -4,10 +4,11 @@ close all;
 %% EXECUTION FLAGS
 
 NLP_PLANNING = false;
-DOUBLE_PHASE = false;
+DOUBLE_PHASE = true;
 RECORD_VIDEO = false;
 COMPUTING_DEVICE_DELAY = true;
-USE_NMPC = true;
+USE_NMPC = false;
+CODE_GENERATED_NLP = true;
 EXPLORATION_TYPE = "R";  %% select one in the following string list ["V","H","R"]
 
 %% ENVIRONMENT INITIALIZATION
@@ -71,7 +72,7 @@ end
 
 %% SIMULATION TIME
 
-END_TIME = 50; % secs 2 mins of simulation
+END_TIME = 120; % secs 2 mins of simulation
 TIME_STEP = 0.1; % secs
 t_simulation = 0:TIME_STEP:END_TIME;
 

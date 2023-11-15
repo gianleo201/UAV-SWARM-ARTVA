@@ -84,13 +84,6 @@ function resFunction = buildConstraints(MIN_T0, NUM_AGENTS, N_approx_bernstain, 
                 k = k + 1;
             end
 
-%             %% 0 final velocity constraint
-%             temp9 = BernsteinProduct(vel_BNS(1,:),vel_BNS(1,:)) + ...
-%                 BernsteinProduct(vel_BNS(2,:),vel_BNS(2,:));
-% 
-%             ceq(keq) = temp9(end);
-%             keq = keq + 1;
-
         end
     end
     

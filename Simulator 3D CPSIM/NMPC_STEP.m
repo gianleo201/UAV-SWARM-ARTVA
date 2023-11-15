@@ -8,6 +8,7 @@ function [nmpc_mv, new_onlineData, info] = NMPC_STEP(NMPC_obj,X0,U0,onlineData,C
         opt.X0 = onlineData.X0;
         opt.MV0 = onlineData.MV0;
         opt.Slack0 = onlineData.Slack0;
+        opt.MVTarget = onlineData.MVTarget;
         if isfield(onlineData,"md")
             md = onlineData.md;
         else

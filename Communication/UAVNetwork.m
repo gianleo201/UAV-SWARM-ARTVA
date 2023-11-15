@@ -8,27 +8,40 @@ classdef UAVNetwork < handle
         TIME_STEP;
         NMPC_handle;
         THREE_DIMENSIONAL;
+        d_safe;
+        v_max;
+        DELAY_SYNC;
+        FOLLOW_TRAJECTORY;
     end
 
     methods
-        function obj = UAVNetwork(N,TIME_STEP,network_matrix,recievers_pos_ode0,X_hat0,S_RLS0,compute_Y,NMPC_handle,d_safe,v_max,MODE,model_params)
+        function obj = UAVNetwork(N,TIME_STEP,network_matrix,recievers_pos_ode0,X_hat0,S_RLS0,compute_Y,NMPC_handle,d_safe,v_max,MODE,model_params,UAV_trajs)
             %%
+            % flags
+            obj.DELAY_SYNC = -1;
+            obj.FOLLOW_TRAJECTORY = true;
+
+            obj.THREE_DIMENSIONAL = false;
+            if  nargin > 10 &&  MODE == "3D"
+                obj.THREE_DIMENSIONAL = true;
+            end
+
+            % main variables
             obj.NUM_UAVS = N;
             obj.network_matrix = network_matrix;
             obj.compute_Y = compute_Y;
             obj.UAVS = cell(obj.NUM_UAVS,1);
             obj.TIME_STEP = TIME_STEP;
             obj.NMPC_handle = NMPC_handle;
-            obj.THREE_DIMENSIONAL = false;
-            if  nargin > 10 &&  MODE == "3D"
-                obj.THREE_DIMENSIONAL = true;
-            end
+            obj.d_safe = d_safe;
+            obj.v_max = v_max;
+
 
             %% selection matrices and lists
             for i = 1 : obj.NUM_UAVS
                 UAV_struct = {};
                 UAV_struct.TRANSMITTER_FOUND = false;
-                UAV_struct.T_REPLANNING = 10;
+                UAV_struct.T_REPLANNING = 4;
                 UAV_struct.selection_matrix = [];
                 UAV_struct.selection_list = [];
                 UAV_struct.complementar_selection_matrix = [];
@@ -50,6 +63,16 @@ classdef UAVNetwork < handle
                     end
                 end
                 UAV_struct.dispatcher = Dispatcher(length(UAV_struct.selection_list),TIME_STEP,recievers_pos_ode0(UAV_struct.selection_list,:),X_hat0,S_RLS0);
+                % add prev pos and velocity variable to estimate velocity
+                % and acceleration
+%                 UAV_struct.prev_neigh_pos = zeros(N,3);
+%                 UAV_struct.prev_neigh_vel = zeros(N,3);
+%                 UAV_struct.prev_non_neigh_values = zeros(N,3);
+                UAV_struct.TRACKED_OBS = false;
+                if nargin > 12
+                    UAV_struct.trajectory_ref = squeeze(UAV_trajs(i,:,:));
+                    UAV_struct.trajectory_step = 1;
+                end
                 obj.UAVS{i} = UAV_struct;
             end
 
@@ -83,25 +106,49 @@ classdef UAVNetwork < handle
                     neigh = [];
                 end
                 neigh = [neigh;zeros(obj.NUM_UAVS-num_neigh,3)];
+                neigh = [neigh;zeros(2*obj.NUM_UAVS,3)];
 
                 %% sensor
-                temp_mask1 = (obj.UAVS{i}.complementar_selection_list ~= i);
-                num_non_neigh = obj.NUM_UAVS-num_neigh-1;
-                if ~isempty(obj.UAVS{i}.complementar_selection_matrix)
-                    if ~obj.THREE_DIMENSIONAL
-                    non_neigh = obj.UAVS{i}.complementar_selection_matrix * [recievers_pos_ode0(:,1:2) zeros(size(recievers_pos_ode0,1),1)];
-                    else
-                        non_neigh = obj.UAVS{i}.complementar_selection_matrix * recievers_pos_ode0(:,1:3);
-                    end
-                    non_neigh = non_neigh(temp_mask1,:);
+%                 temp_mask1 = (obj.UAVS{i}.complementar_selection_list ~= i);
+%                 num_non_neigh = obj.NUM_UAVS-num_neigh-1;
+%                 if ~isempty(obj.UAVS{i}.complementar_selection_matrix)
+%                     if ~obj.THREE_DIMENSIONAL
+%                     non_neigh = obj.UAVS{i}.complementar_selection_matrix * [recievers_pos_ode0(:,1:2) zeros(size(recievers_pos_ode0,1),1)];
+%                     else
+%                         non_neigh = obj.UAVS{i}.complementar_selection_matrix * recievers_pos_ode0(:,1:3);
+%                     end
+%                     non_neigh = non_neigh(temp_mask1,:);
+%                 else
+%                     non_neigh = [];
+%                 end
+%                 non_neigh = [non_neigh;zeros(obj.NUM_UAVS-num_non_neigh,3)];
+                if ~obj.THREE_DIMENSIONAL
+                    [nearest_obs,min_dist] = UAVNetwork.compute_nearest_obs([recievers_pos_ode0(i,1:2) 0],[recievers_pos_ode0(1:size(recievers_pos_ode0,1) ~= i,1:2) zeros(size(recievers_pos_ode0,1)-1,1)]);
+                    non_neigh = [nearest_obs;zeros(2,3)];
                 else
-                    non_neigh = [];
+                    [nearest_obs,min_dist] = UAVNetwork.compute_nearest_obs(recievers_pos_ode0(i,1:3),recievers_pos_ode0(1:size(recievers_pos_ode0,1) ~= i,1:3));
+                    non_neigh = [nearest_obs;zeros(2,3)];
                 end
-                non_neigh = [non_neigh;zeros(obj.NUM_UAVS-num_non_neigh,3)];
+
+                num_non_neigh = 3;
+             
+                if obj.UAVS{i}.TRACKED_OBS && min_dist >= d_safe + 2 * v_max * obj.NMPC_handle.PredictionHorizon*obj.NMPC_handle.Ts
+                    num_non_neigh = -1;
+                    non_neigh = zeros(3,3);
+                    obj.UAVS{i}.TRACKED_OBS = false;
+                elseif ~obj.UAVS{i}.TRACKED_OBS && min_dist <= d_safe + 2 * v_max * obj.NMPC_handle.PredictionHorizon*obj.NMPC_handle.Ts
+                    obj.UAVS{i}.TRACKED_OBS = true;
+                elseif ~obj.UAVS{i}.TRACKED_OBS && min_dist >=  d_safe + 2 * v_max * obj.NMPC_handle.PredictionHorizon*obj.NMPC_handle.Ts
+                    num_non_neigh = -1;
+                    non_neigh = zeros(3,3);
+                elseif obj.UAVS{i}.TRACKED_OBS && min_dist <= d_safe + 2 * v_max * obj.NMPC_handle.PredictionHorizon*obj.NMPC_handle.Ts
+                    non_neigh(2,:) = (non_neigh(1,:)-prev_non_neigh_matrix(1,:))/obj.NMPC_handle.PredictionHorizon;
+                    non_neigh(3,:) = (non_neigh(2,:)-prev_non_neigh_matrix(2,:))/obj.NMPC_handle.PredictionHorizon;
+                end
                 
                 %%
                 X0 = recievers_pos_ode0(i,:);
-                obj.UAVS{i}.lambda_factor = 0.1;
+                obj.UAVS{i}.lambda_factor = 0.1;  % promote robust responces
                 
                 if ~obj.THREE_DIMENSIONAL
                     curr_ref = EMA_const_reference(X0,[obj.UAVS{i}.transmitter_pos_hat(1:2) 0 0],obj.UAVS{i}.lambda_factor,NMPC_handle.PredictionHorizon);
@@ -115,6 +162,7 @@ classdef UAVNetwork < handle
                 end
                 [~,OD] = getCodeGenerationData(NMPC_handle,X0.',U0.',NMPC_params);
                 OD.ref = curr_ref;
+                OD.MVTarget = (model_params(6)*model_params(7)/4)*ones(1,4);
                 obj.UAVS{i}.OD = OD;
                 obj.UAVS{i}.U = U0;
                 obj.UAVS{i}.X = X0;
@@ -166,11 +214,8 @@ classdef UAVNetwork < handle
                     if ~obj.THREE_DIMENSIONAL
                         last_pos_info = [last_pos_info(:,1:2) zeros(size(last_pos_info,1),1)];
                     end
-                    recievers_pos = Qs.'*last_pos_info;
-                    H_num = H_function(recievers_pos);
-                    Y_num = obj.compute_Y(recievers_pos);
-                    H_num = H_num*Qs.';
-                    Y_num = Qs*Y_num;
+                    H_num = H_function(size(last_pos_info,1),last_pos_info);
+                    Y_num = obj.compute_Y(size(last_pos_info,1),last_pos_info);
                 else
                     H_num = H_num_arg*Qs.';
                     Y_num = Qs*Y_num_arg;
@@ -254,7 +299,7 @@ classdef UAVNetwork < handle
                     obj.UAVS{i}.TRANSMITTER_FOUND = false;
                 end
 
-                obj.UAVS{i}.last_transmitter_pos_hat = obj.UAVS{i}.transmitter_pos_hat;
+%                 obj.UAVS{i}.last_transmitter_pos_hat = obj.UAVS{i}.transmitter_pos_hat;
             end
 
         end
@@ -322,22 +367,58 @@ classdef UAVNetwork < handle
 
         function Us = NMPC_UAV_TEAM_step(obj)
             Us = [];
+            %% delay in computing control
+            if obj.DELAY_SYNC == 0
+                obj.DELAY_SYNC = 2;
+            elseif obj.DELAY_SYNC > 0
+                for i=1:obj.NUM_UAVS
+                    Us = [Us;obj.UAVS{i}.U];
+                    obj.UAVS{i}.CPU_TIME = [obj.UAVS{i}.CPU_TIME obj.UAVS{i}.CPU_TIME(end)];
+                end
+                obj.DELAY_SYNC = obj.DELAY_SYNC - 1;
+                return;
+            end
             for i = 1 : obj.NUM_UAVS
                 %% NMPC step
                 
 
-                if ~obj.THREE_DIMENSIONAL
-                    curr_ref = [obj.UAVS{i}.X_ref(1:2) 0 0];
-                else
-                    curr_ref = [obj.UAVS{i}.X_ref zeros(1,size(obj.UAVS{i}.X,2)-3)];
-                end
+                if obj.FOLLOW_TRAJECTORY
 
-                obj.UAVS{i}.OD.ref = EMA_const_reference(obj.UAVS{i}.X, ...
-                                curr_ref, ...
-                                obj.UAVS{i}.lambda_factor, ...
-                                obj.UAVS{i}.prediction_horizon);
-                
-                obj.UAVS{i}.OD.ref = obj.UAVS{i}.OD.ref(:,1:4);
+                    p = obj.NMPC_handle.PredictionHorizon;
+                    k_0 = obj.UAVS{i}.trajectory_step;
+                    k_f = obj.UAVS{i}.trajectory_step+p-1;
+                    k_suppl = 0;
+                    exceeded = k_f-size(obj.UAVS{i}.trajectory_ref,1);
+                    if exceeded > 0
+                        k_f = k_f - exceeded;
+                        k_suppl = exceeded;
+                    end
+                    if k_0 < size(obj.UAVS{i}.trajectory_ref,1)
+                        obj.UAVS{i}.trajectory_step = obj.UAVS{i}.trajectory_step + 1;
+                    end
+                    temp = obj.UAVS{i}.trajectory_ref(k_0:k_f,:);
+                    l = k_f-k_0+1;
+                    curr_z = obj.UAVS{i}.X(3);
+%                     first_part = [temp(:,1:2) curr_z*ones(l,1) temp(:,3:4) zeros(l,1) zeros(l,6)];
+%                     end_part = repmat([temp(end,1:3) zeros(1,9)],k_suppl,1);
+                    first_part = [temp(:,1:2) curr_z*ones(l,1) temp(:,3:4) zeros(l,1) zeros(l,1)];
+                    end_part = repmat([temp(end,1:3) zeros(1,4)],k_suppl,1);
+                    obj.UAVS{i}.OD.ref = [first_part;end_part];
+
+                else
+                    if ~obj.THREE_DIMENSIONAL
+                        curr_ref = [obj.UAVS{i}.X_ref(1:2) 0 0];
+                    else
+                        curr_ref = [obj.UAVS{i}.X_ref zeros(1,size(obj.UAVS{i}.X,2)-3)];
+                    end
+    
+                    obj.UAVS{i}.OD.ref = EMA_const_reference(obj.UAVS{i}.X, ...
+                                    curr_ref, ...
+                                    obj.UAVS{i}.lambda_factor, ...
+                                    obj.UAVS{i}.prediction_horizon);
+                    
+                    obj.UAVS{i}.OD.ref = obj.UAVS{i}.OD.ref(:,1:4);
+                end
                
                 tic;
                 [nmpc_mv, new_OD, info] = NMPC_STEP(obj.NMPC_handle, ...
@@ -361,12 +442,10 @@ classdef UAVNetwork < handle
 %                         obj.UAVS{i}.U = - obj.UAVS{i}.X(4:6); % stop the UAV
                         obj.UAVS{i}.U = nmpc_mv.';
                     end
-%                     obj.UAVS{i}.U = nmpc_mv.';
-                    obj.UAVS{i}.OD = new_OD; % do not modify online data
                 else
                     obj.UAVS{i}.U = nmpc_mv.';
-                    obj.UAVS{i}.OD = new_OD;
                 end
+                    obj.UAVS{i}.OD = new_OD;
 
                 %% return input
                 if ~obj.THREE_DIMENSIONAL
@@ -388,6 +467,7 @@ classdef UAVNetwork < handle
                 %% known uavs
                 temp_mask = (obj.UAVS{i}.selection_list ~= i);
                 num_neigh = length(obj.UAVS{i}.selection_list)-1;
+                prev_neigh_matrix = obj.UAVS{i}.OD.Parameters{1};
                 if num_neigh > 0
                     if ASYNC
                         temp_val = extractPosOde(obj.UAVS{i}.dispatcher.curr_info_cell);
@@ -409,21 +489,52 @@ classdef UAVNetwork < handle
                     neigh = [];
                 end
                 neigh = [neigh;zeros(obj.NUM_UAVS-num_neigh,3)];
+                neigh = [neigh;zeros(2*obj.NUM_UAVS,3)];
+                neigh(obj.NUM_UAVS+1:2*obj.NUM_UAVS,:) = (neigh(1:obj.NUM_UAVS,:)-prev_neigh_matrix(1:obj.NUM_UAVS,:))/obj.NMPC_handle.PredictionHorizon;
+                neigh(2*obj.NUM_UAVS+1:3*obj.NUM_UAVS,:) = (neigh(obj.NUM_UAVS+1:2*obj.NUM_UAVS,:)-prev_neigh_matrix(obj.NUM_UAVS+1:2*obj.NUM_UAVS,:))/obj.NMPC_handle.PredictionHorizon;
 
                 %% sensor
-                temp_mask1 = (obj.UAVS{i}.complementar_selection_list ~= i);
-                num_non_neigh = obj.NUM_UAVS-num_neigh-1;
-                if ~isempty(obj.UAVS{i}.complementar_selection_matrix)
-                    if ~obj.THREE_DIMENSIONAL
-                        non_neigh = obj.UAVS{i}.complementar_selection_matrix * [recievers_pos_ode(:,1:2) zeros(size(recievers_pos_ode,1),1)];
-                    else
-                        non_neigh = obj.UAVS{i}.complementar_selection_matrix * recievers_pos_ode(:,1:3);
-                    end
-                    non_neigh = non_neigh(temp_mask1,:);
+%                 temp_mask1 = (obj.UAVS{i}.complementar_selection_list ~= i);
+%                 num_non_neigh = obj.NUM_UAVS-num_neigh-1;
+%                 if ~isempty(obj.UAVS{i}.complementar_selection_matrix)
+%                     if ~obj.THREE_DIMENSIONAL
+%                         non_neigh = obj.UAVS{i}.complementar_selection_matrix * [recievers_pos_ode(:,1:2) zeros(size(recievers_pos_ode,1),1)];
+%                     else
+%                         non_neigh = obj.UAVS{i}.complementar_selection_matrix * recievers_pos_ode(:,1:3);
+%                     end
+%                     non_neigh = non_neigh(temp_mask1,:);
+%                 else
+%                     non_neigh = [];
+%                 end
+%                 non_neigh = [non_neigh;zeros(obj.NUM_UAVS-num_non_neigh,3)];
+
+                prev_non_neigh_matrix = obj.UAVS{i}.OD.Parameters{3};
+                if ~obj.THREE_DIMENSIONAL
+                    [nearest_obs,min_dist] = UAVNetwork.compute_nearest_obs([recievers_pos_ode(i,1:2) 0],[recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,1:2) zeros(size(recievers_pos_ode,1)-1,1)]);
+                    non_neigh = [nearest_obs;zeros(2,3)];
                 else
-                    non_neigh = [];
+                    [nearest_obs,min_dist] = UAVNetwork.compute_nearest_obs(recievers_pos_ode(i,1:3),recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,1:3));
+                    non_neigh = [nearest_obs;zeros(2,3)];
+                    
                 end
-                non_neigh = [non_neigh;zeros(obj.NUM_UAVS-num_non_neigh,3)];
+
+                num_non_neigh = 3;
+                d_safe = obj.d_safe;
+                v_max = obj.v_max;
+             
+                if obj.UAVS{i}.TRACKED_OBS && min_dist >= d_safe + 2 * v_max * obj.NMPC_handle.PredictionHorizon*obj.NMPC_handle.Ts
+                    num_non_neigh = -1;
+                    non_neigh = zeros(3,3);
+                    obj.UAVS{i}.TRACKED_OBS = false;
+                elseif ~obj.UAVS{i}.TRACKED_OBS && min_dist <= d_safe + 2 * v_max * obj.NMPC_handle.PredictionHorizon*obj.NMPC_handle.Ts
+                    obj.UAVS{i}.TRACKED_OBS = true;
+                elseif ~obj.UAVS{i}.TRACKED_OBS && min_dist >=  d_safe + 2 * v_max * obj.NMPC_handle.PredictionHorizon*obj.NMPC_handle.Ts
+                    num_non_neigh = -1;
+                    non_neigh = zeros(3,3);
+                elseif obj.UAVS{i}.TRACKED_OBS && min_dist <= d_safe + 2 * v_max * obj.NMPC_handle.PredictionHorizon*obj.NMPC_handle.Ts
+                    non_neigh(2,:) = (non_neigh(1,:)-prev_non_neigh_matrix(1,:))/obj.NMPC_handle.PredictionHorizon;
+                    non_neigh(3,:) = (non_neigh(2,:)-prev_non_neigh_matrix(2,:))/obj.NMPC_handle.PredictionHorizon;
+                end
                 
                 %%
                 obj.UAVS{i}.OD.Parameters{1} = neigh;
@@ -464,6 +575,7 @@ classdef UAVNetwork < handle
 
                 cur_pos_hat = obj.UAVS{i}.transmitter_pos_hat;
                 last_pos_hat = obj.UAVS{i}.last_transmitter_pos_hat;
+                obj.UAVS{i}.last_transmitter_pos_hat = obj.UAVS{i}.transmitter_pos_hat;
                 last_trustable_pos_hat = obj.UAVS{i}.last_trustable_transmitter_pos_hat;
                 if ~obj.THREE_DIMENSIONAL
                     cur_pos_hat = cur_pos_hat(1:2);
@@ -472,15 +584,15 @@ classdef UAVNetwork < handle
                 end
                 
                 estimate_var = norm(cur_pos_hat - last_pos_hat);
-                norm_var = 1;
-                obj.UAVS{i}.T_REPLANNING = obj.UAVS{i}.T_REPLANNING - exp(estimate_var-norm_var) * obj.TIME_STEP;
-%                 obj.UAVS{i}.T_REPLANNING = obj.UAVS{i}.T_REPLANNING - obj.TIME_STEP;
+                norm_var = 0.1;
+%                 obj.UAVS{i}.T_REPLANNING = obj.UAVS{i}.T_REPLANNING - exp(estimate_var-norm_var) * obj.TIME_STEP;
+                obj.UAVS{i}.T_REPLANNING = obj.UAVS{i}.T_REPLANNING - obj.TIME_STEP;
 
                 if  obj.UAVS{i}.T_REPLANNING <= 0 ...
-                    && (obj.UAVS{i}.sigma_travelled <= 0.7 * obj.NUM_UAVS || norm(cur_pos_hat-last_trustable_pos_hat) > 10)
+                    && (obj.UAVS{i}.sigma_travelled <= 20 * length(obj.UAVS{i}.selection_list) || norm(cur_pos_hat-last_trustable_pos_hat) > 2)
                     
                     % reset timer
-                    obj.UAVS{i}.T_REPLANNING = 10;
+                    obj.UAVS{i}.T_REPLANNING = 4;
 
                     % reset observability index consumed up to now
                     obj.UAVS{i}.k_for_O = 0;
@@ -502,4 +614,18 @@ classdef UAVNetwork < handle
             end
         end
     end
+
+    methods(Static)
+        function [x_nearest_obs,min_dist] = compute_nearest_obs(x,x_neighs)
+                x_nearest_obs = x_neighs(1,:);
+                min_dist = norm(x-x_neighs(1,:));
+                for i = 1:size(x_neighs,1)
+                    if norm(x-x_neighs(i,:)) < min_dist
+                        x_nearest_obs = x_neighs(i,:);
+                        min_dist = norm(x-x_neighs(i,:));
+                    end
+                end
+        end
+    end
+
 end

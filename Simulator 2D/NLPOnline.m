@@ -67,7 +67,6 @@ for i=1:N
     i_th_final = transmitter_pos_hat(1:2)+1.25*r_safe*[cos(i_th_angle) sin(i_th_angle)];
     NLP_Bns_X0(i,:,N_approx_bernstain+1) = i_th_final.'; % final position =  transmitter estimate
 
-
 %     % reach the area of the estimated transmitted position divided in
 %     % sectors (to each drone the nearest sector)
 %     r_safe = sqrt( (d_safe^2) / ( 2*(1-cos(DELTA_angle)) ) ); % cannot enter in a circle area of radius r_safe in order to respect collision avoidance constriant
@@ -130,6 +129,7 @@ for i=1:N
 %         end
 %     end
 
+
     % assign remaining points to a straight trejectory from start to
     % i_th_final
     temp_traj = i_th_final-recievers_pos_ode(i,1:2);
@@ -167,11 +167,11 @@ for k=1:N
     for i=1:2
         for j = 1:N_approx_bernstain+1
             curr_i = (k-1)+(i-1)*N+(j-1)*2*N+1;
-            if j==1
+            if j==1 % match initial position
                 A_clin(p,curr_i+1) = 1;
                 B_clin(p) = recievers_pos_ode(k,i);
                 p = p + 1;
-            elseif j==2
+            elseif j==2 % match initial velocity
                 A_clin(p,curr_i+1) = 1;
                 A_clin(p,1) = -recievers_pos_ode(k,2+i)/N_approx_bernstain;
                 relative_curr_pos = (k-1)+(i-1)*N+1;
@@ -210,7 +210,7 @@ problem.nonlcon = CNSTR;
 
 tic;
 [x_opt,f_opt] = fmincon(problem);
-fprintf("Total elpsed time to solve minimization problem: %d\n",toc);
+fprintf("CPU time taken to solve optimization problem: %d\n",toc);
 
 % save results
 t_f = x_opt(1);
