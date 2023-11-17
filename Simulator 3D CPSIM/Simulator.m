@@ -1,6 +1,6 @@
 
 clear;
-EnvINIT; % initiali5ze environment
+EnvINIT; % initialize environment
 
 %% MAINLOOP SETUP
 
