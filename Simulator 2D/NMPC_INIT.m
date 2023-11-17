@@ -1,4 +1,4 @@
-NMPC_MODIFIED = true;
+NMPC_MODIFIED = false;
 
 Drone_NMPC = nlmpc(4,4,2);
 

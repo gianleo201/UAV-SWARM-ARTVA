@@ -1,16 +1,16 @@
-if exist("LAST_N.mat","file")
-    LAST_N = load("LAST_N.mat");
-    if LAST_N.N == N
-        fprintf("Model already generated for %d UAVs\n",N);
-        return;
-    end
-    
-    save LAST_N.mat N;
-    
-    clear LAST_N;
-else
-    save LAST_N.mat N;
-end
+% if exist("LAST_N.mat","file")
+%     LAST_N = load("LAST_N.mat");
+%     if LAST_N.N == N
+%         fprintf("Model already generated for %d UAVs\n",N);
+%         return;
+%     end
+%     
+%     save LAST_N.mat N;
+%     
+%     clear LAST_N;
+% else
+%     save LAST_N.mat N;
+% end
 
 %% Symbolic variables
 

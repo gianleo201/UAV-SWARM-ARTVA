@@ -13,7 +13,7 @@ if ~exist('VIZ_planned_trajs','var')
         ylim([-temp_var temp_var]);
     end
 
-    if ~USE_NMPC
+    if ~USE_NMPC || NLP_AND_NMPC
         for i=1:N
             temp = squeeze(UAV_trajs(i,:,:));
             VIZ_planned_trajs{i} = plot(temp(:,1),temp(:,2),'--','LineWidth',1.5,'Color',color_list(i));

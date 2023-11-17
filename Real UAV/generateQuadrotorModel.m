@@ -1,4 +1,4 @@
-ENABLE_FUNCTION_GENERATION = true;
+ENABLE_FUNCTION_GENERATION = false;
 RPY_FIXED_AXIS = true;
 CHANGE_OF_INPUT = false;
 
@@ -212,7 +212,7 @@ if ~CHANGE_OF_INPUT
     p_obs_dot = [x_obs_dot y_obs_dot z_obs_dot].';
     p_obs_ddot = [x_obs_ddot y_obs_ddot z_obs_ddot].';
     
-    h_f = norm([x;y;z]-p_obs) - d_dist;
+    h_f = simplify(norm([x;y;z]-p_obs) - d_dist);
     h_f_dot = simplify(jacobian(h_f,sym_model_state)*quadrotor_model + jacobian(h_f,p_obs)*p_obs_dot);
     h_f_ddot = simplify(jacobian(h_f_dot,sym_model_state)*quadrotor_model + jacobian(h_f_dot,[p_obs;p_obs_dot])*[p_obs_dot;p_obs_ddot]);
 end

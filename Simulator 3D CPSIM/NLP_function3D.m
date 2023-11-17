@@ -79,20 +79,20 @@ for i=1:N
     i_th_final = transmitter_pos_hat(1:2)+1.25*r_safe*[cos(i_th_angle) sin(i_th_angle)];
     NLP_Bns_X0(i,:,N_approx_bernstain+1) = i_th_final.'; % final position =  transmitter estimate
 
-    % assign remaining points to a straight trejectory from start to
-    % i_th_final
-    temp_traj = i_th_final-recievers_pos_ode(i,1:2);
-    for kth=3:N_approx_bernstain
-        NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-1))*temp_traj;
-    end
-
-%     % assign remaining points to a straight trejectory with 0 final
-%     % velocity
-%     NLP_Bns_X0(i,:,N_approx_bernstain) = NLP_Bns_X0(i,:,N_approx_bernstain+1); % final velocity = 0
+%     % assign remaining points to a straight trejectory from start to
+%     % i_th_final
 %     temp_traj = i_th_final-recievers_pos_ode(i,1:2);
-%     for kth=3:N_approx_bernstain-1
-%         NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-2))*temp_traj;
+%     for kth=3:N_approx_bernstain
+%         NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-1))*temp_traj;
 %     end
+
+    % assign remaining points to a straight trejectory with 0 final
+    % velocity
+    NLP_Bns_X0(i,:,N_approx_bernstain) = NLP_Bns_X0(i,:,N_approx_bernstain+1); % final velocity = 0
+    temp_traj = i_th_final-recievers_pos_ode(i,1:2);
+    for kth=3:N_approx_bernstain-1
+        NLP_Bns_X0(i,:,kth) = recievers_pos_ode(i,1:2) + ((kth-2)/(N_approx_bernstain-2))*temp_traj;
+    end
 
 %     % assign remaining points to a straight trejectory with 0 final
 %     % velocity and 0 final acceleration
@@ -117,8 +117,8 @@ x0 = [NLP_tf_X0 reshape(NLP_Bns_X0,1,[])];
 
 % set linear constraints
 vec_length = length(reshape(NLP_Bns_X0,1,[]))+1;
-num_eq_constr = 4*N;
-% num_eq_constr = 6*N; % zero final velocity
+% num_eq_constr = 4*N;
+num_eq_constr = 6*N; % zero final velocity
 % num_eq_constr = 8*N; % zero final acceleration
 A_clin = zeros(num_eq_constr,vec_length);
 B_clin = zeros(num_eq_constr,1);
@@ -137,12 +137,12 @@ for k=1:N
                 relative_curr_pos = (k-1)+(i-1)*N+1;
                 A_clin(p,relative_curr_pos+1) = -1;
                 p = p + 1;
-%             elseif j == N_approx_bernstain % zero final velocity
-%                 A_clin(p,curr_i+1) = 1;
-%                 reative_curr_pos = (k-1)+(i-1)*N+N_approx_bernstain*2*N+1;
-%                 A_clin(p,reative_curr_pos+1) = -1;
-%                 B_clin(p) = 0;
-%                 p = p + 1;
+            elseif j == N_approx_bernstain % zero final velocity
+                A_clin(p,curr_i+1) = 1;
+                reative_curr_pos = (k-1)+(i-1)*N+N_approx_bernstain*2*N+1;
+                A_clin(p,reative_curr_pos+1) = -1;
+                B_clin(p) = 0;
+                p = p + 1;
 %             elseif j == N_approx_bernstain-1 % zero final acceleration
 %                 A_clin(p,curr_i+1) = 1;
 %                 reative_curr_pos = (k-1)+(i-1)*N+(N_approx_bernstain-1)*2*N+1;
@@ -158,8 +158,8 @@ end
 init_cond_feasability_check = (abs(A_clin*x0.'-B_clin) >= 1e-06);
 if any(init_cond_feasability_check)
     fprintf("Initial conditions doesn't satisfy constraints\n");
-    display(init_cond_feasability_check);
-    fprintf("Dummy row\n");
+%     display(init_cond_feasability_check);
+%     fprintf("Dummy row\n");
 else
     fprintf("Initial conditions satisfies constraints\n");
 end

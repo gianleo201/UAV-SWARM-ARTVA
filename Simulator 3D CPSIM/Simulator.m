@@ -27,9 +27,9 @@ S_RLS = diag([10 10 10 10 10 10 ...
              (hl_length^4)/9]); % initial covariance matrix
 % transmitter_pos_hat = [0 0 0]; % initial guess for the transmitter
 last_replanning_transmitter_pos_hat = transmitter_pos_hat; % keep memory at each replanning
-M_hat = [4     0    0;
-         0     1    0;
-         0     0    1];
+M_hat = [b^2   0      0;
+         0     a^2    0;
+         0     0    a^2];
 % m_11 m_12 m_13 m_22 m_23 m_33 p_t_bar rho
 X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
         (M_hat*transmitter_pos_hat.').' ...
@@ -40,22 +40,18 @@ X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
 t_f = 30; % [s]  ( first estimated mission time )
 d_t = 5; % [m]
 % ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
-ObjectiveWeights = [1 1e-06/N 1e-01/N];
+ObjectiveWeights = [1 1e-08/N 1e-06/N];
 % ObjectiveWeights = [1 1e-02 1e-01];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
 problem.solver = 'fmincon';
 
 % problem.options = optimoptions("fmincon", ...
-%                 "Display","iter-detailed",...
-%                 "OptimalityTolerance",1e-02);
+%                 "Display","iter-detailed");
 
 problem.options = optimoptions("fmincon",...
                 "Display","iter-detailed",...
-                "Algorithm","interior-point",...
-                "EnableFeasibilityMode",true,...
-                "SubproblemAlgorithm","cg",...
-                "OptimalityTolerance",1e-02);
+                "Algorithm","interior-point");
 
 if ~USE_NMPC || NLP_AND_NMPC
     if NLP_PLANNING
@@ -107,7 +103,8 @@ for i = 1:N
 end
 
 % obsevability index
-my_temp = H_function(N,recievers_pos);
+% my_temp = H_function(N,recievers_pos);
+my_temp = H_function(N,[recievers_pos(:,1:2) zeros(N,1)]);
 my_temp = my_temp*my_temp.';
 last_matrix_sum = my_temp;
 my_temp = min_sv_O(last_matrix_sum,min([N,10]));
@@ -115,7 +112,7 @@ OI_VAL = [my_temp];
 
 % estimate variation
 TRANSMITTER_ESTIMATE_VARIATION = [0];
-ESTIMATE_VARIATION_THRESHOLD = 1e-04;
+ESTIMATE_VARIATION_THRESHOLD = 5e-04;
 
 % estimate error
 TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
@@ -124,8 +121,8 @@ TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat
 if COMPUTING_DEVICE_DELAY
     NOMINAL_TRANSMISSION_DISTANCE = 50; % [m] is the distance between any UAV and the estimation device such that the nominal transmission time is the sample time
     medium_velocity = NOMINAL_TRANSMISSION_DISTANCE/TIME_STEP; % [m/s]
-    uncertain_time_range = 50*TIME_STEP; % [s]
-    estimation_device_pos = [0 100 0];
+    uncertain_time_range = 100*TIME_STEP; % [s]
+    estimation_device_pos = [0 -20 0];
     AS = Dispatcher(N,TIME_STEP,recievers_pos_ode,NaN,NaN);
 end
 
@@ -147,6 +144,8 @@ if size(network_matrix,1) ~= N || size(network_matrix,2) ~= N
     fprintf("ERROR: network matrix has wrong dimensions\n");
     return;
 end
+
+if exist("UAV_trajs","var")
 UAV_NET = UAVNetwork(N, ...
                      TIME_STEP, ...
                      network_matrix, ...
@@ -160,6 +159,20 @@ UAV_NET = UAVNetwork(N, ...
                      "3D", ...
                      model_params, ...
                      UAV_trajs);
+else
+UAV_NET = UAVNetwork(N, ...
+                     TIME_STEP, ...
+                     network_matrix, ...
+                     recievers_pos_ode, ...
+                     X_hat, ...
+                     S_RLS, ...
+@(Ns,x) Y_function(Ns,x,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0), ...
+                     Drone_NMPC, ...
+                     d_safe, ...
+                     v_max, ...
+                     "3D", ...
+                     model_params);
+end
 
 % DRLS estimate variation from standard RLS
 NETWORK_ESTIMATES = UAV_NET.pull_estimates();
@@ -173,7 +186,8 @@ TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [NETWORK_ESTIMATES_DEV];
 
 % connection to env
 client = RemoteAPIClient();
-sim = client.getObject('sim');
+% sim = client.getObject('sim');
+sim = client.require('sim');
 
 % get uav handles
 UAV_propellers_list = cell(1,N);
@@ -208,18 +222,64 @@ for i = 1:N
     sim.setObjectPosition(UAV_handels{i,2},sim.handle_world,temp_cell);
 end
 
-client.setStepping(true);
+% hide targets
+for i = 1:N
+    sim.setObjectInt32Param(UAV_handels{i,2},sim.objintparam_visibility_layer,0)
+end
+
+% %show targets
+% for i = 1:N
+%     sim.setObjectInt32Param(UAV_handels{i,2},sim.objintparam_visibility_layer,1)
+% end
+
+% show planner device position
+PlannerDevice = sim.getObject("./Planner");
+if exist("estimation_device_pos","var")
+    sim.setObjectInt32Param(PlannerDevice,sim.objintparam_visibility_layer,1);
+    temp_cell = cell(1,3);
+    for j = 1:3; temp_cell{j} = estimation_device_pos(j); end
+    temp_cell{3} = 0.5;
+    sim.setObjectPosition(PlannerDevice,temp_cell);
+else
+    sim.setObjectInt32Param(PlannerDevice,sim.objintparam_visibility_layer,0);
+end
+
+
+% show centralized estimated position
+CPSIM_estimated_position = sim.getObject("./EstimatedPos");
+for j = 1:3; temp_cell{j} = transmitter_pos_hat(j); end
+temp_cell{3} = 0.05;
+sim.setObjectPosition(CPSIM_estimated_position,temp_cell);
+
+% set nodegraph position
+CPSIM_node_graph = sim.getObject("./NodeGraph");
+temp_cell = cell(1,3);
+for j = 1:3; temp_cell{j} = estimation_device_pos(j); end
+temp_cell{3} = 1;
+sim.setObjectPosition(CPSIM_node_graph,temp_cell);
+
+% initial inputs (gravity compensation to hover)
+for i=1:N
+    control_UAV(sim,UAV_propellers_list{i},[1.2753,1.2753,1.2753,1.2753]);
+end
+
+% client.setStepping(true);
+sim.setStepping(true);
 
 sim.startSimulation();
 
+
 %% MAINLOOP EXECUTION
+
+BROADCAST_COUNT_DOWN = -1;
 
 STEP = 1;
 K_STEP = 2;
-
+plotComputedTrajs;
+visualize_init;
 while t_simulation(STEP) < t_simulation(end)
 
-    if ~USE_NMPC
+    if ~USE_NMPC || NLP_AND_NMPC
         if ~COMPUTING_DEVICE_DELAY ||  t_simulation(STEP) >= 5
             % ending condition on estimate variation
             if STEP > 1 && TRANSMITTER_ESTIMATE_VARIATION(end) < ESTIMATE_VARIATION_THRESHOLD
@@ -251,19 +311,31 @@ while t_simulation(STEP) < t_simulation(end)
             else
                 NLPOnline; % solve NLP
             end
-            if NLP_AND_NMPC
-                for i = 1:UAV_NET.NUM_UAVS
-                    UAV_NET.UAVS{i}.tarjectory_ref = squeeze(UAV_trajs(i,:,:));
-                    UAV_NET.UAVS{i}.tarjectory_step = 1;
-                end
-            end
+            BROADCAST_COUNT_DOWN = fix(CPU_TIME/TIME_STEP)+1;
+%             if NLP_AND_NMPC
+%                 for i = 1:UAV_NET.NUM_UAVS
+%                     UAV_NET.UAVS{i}.trajectory_ref = squeeze(UAV_trajs(i,:,:));
+%                     UAV_NET.UAVS{i}.trajectory_step = 1;
+%                 end
+%             end
 %             % show computed trajs
-%             plotComputedTrajs;
+            plotComputedTrajs;
 %             % plot new estimated mission endtime
-%             set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
+            set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
         end
-        t_replanning = t_f-TIME_STEP; % reset timer
-    
+        t_replanning = 10; % reset timer
+    end
+
+    % actual broadcast after cpu-time
+    if BROADCAST_COUNT_DOWN > 0; BROADCAST_COUNT_DOWN = BROADCAST_COUNT_DOWN - 1;
+    elseif BROADCAST_COUNT_DOWN == 0
+        if NLP_AND_NMPC
+            for i = 1:UAV_NET.NUM_UAVS
+                UAV_NET.UAVS{i}.trajectory_ref = squeeze(UAV_trajs(i,:,:));
+                UAV_NET.UAVS{i}.trajectory_step = fix(CPU_TIME/TIME_STEP)+1;
+            end
+        end
+        BROADCAST_COUNT_DOWN = -1;
     end
     
     % async case preliminarities
@@ -320,12 +392,18 @@ while t_simulation(STEP) < t_simulation(end)
     else
         U_NMPC = UAV_NET.NMPC_UAV_TEAM_step();
         for i = 1:N
-            control_UAV(sim,UAV_propellers_list{i},U_NMPC(i,:));
+            try
+                control_UAV(sim,UAV_propellers_list{i},U_NMPC(i,:));
+            catch
+                fprintf("Ill conditioned solver\n");
+            end
+%             control_UAV(sim,UAV_propellers_list{i},[1.2753,1.2753,1.2753,1.2753]);
         end
     end
 
     % coppelia sim integration step
-    client.step();
+%     client.step();
+    sim.step();
     for i = 1:N
         % get new recievers pos_ode
         recievers_pos_ode(i,:) = getState(sim,UAV_handels{i,1});
@@ -333,6 +411,10 @@ while t_simulation(STEP) < t_simulation(end)
         temp_cell = cell(1,3);
         for j = 1:3; temp_cell{j} = UAV_NET.UAVS{i}.X_ref(j); end
         sim.setObjectPosition(UAV_handels{i,2},sim.handle_world,temp_cell);
+        % show centralized estimated position
+        for j = 1:3; temp_cell{j} = transmitter_pos_hat(j); end
+        temp_cell{3} = 0.05;
+        sim.setObjectPosition(CPSIM_estimated_position,temp_cell);
     end
     recievers_pos = recievers_pos_ode(:,1:3);
 
@@ -374,7 +456,8 @@ while t_simulation(STEP) < t_simulation(end)
     recievers_pos_ode_history(STEP,:,:) = recievers_pos_ode;
 
     % update Observability index value
-    my_temp = H_function(N,recievers_pos);
+%     my_temp = H_function(N,recievers_pos);
+    my_temp = H_function(N,[recievers_pos(:,1:2) zeros(N,1)]);
     my_temp = my_temp*my_temp.';
     last_matrix_sum = last_matrix_sum + (my_temp - last_matrix_sum)/STEP;
     new_OI = min_sv_O(last_matrix_sum,min([N,10]));
@@ -404,6 +487,7 @@ while t_simulation(STEP) < t_simulation(end)
 
 %     % visualize step
 %     pause(TIME_STEP);
+    visualize_update;
 end
 
 sim.stopSimulation();
@@ -481,6 +565,7 @@ hold off;
 saveas(fig5,'./tmp_dir/TEV.png');
 saveas(fig5,'./tmp_dir/TEV.fig');
 saveas(fig5,'./tmp_dir/TEV','epsc');
+
 
 % plot transmitter position estimate error
 fig6 = figure(6);

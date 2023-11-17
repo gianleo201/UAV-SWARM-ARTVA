@@ -6,5 +6,5 @@ ComputeTrajs;
 
 
 %% GENERATE C CODE
-
+% N is the number of UAVs to handle in NLP
 % codegen NLP_function -args {zeros(1,3),0.1,1,3,zeros(N,4),zeros(1,3),1.0,5.0,5.0}

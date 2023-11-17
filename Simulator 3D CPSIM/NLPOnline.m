@@ -164,7 +164,8 @@ problem.nonlcon = CNSTR;
 
 tic;
 [x_opt,f_opt] = fmincon(problem);
-fprintf("Total elpsed time to solve minimization problem: %d\n",toc);
+CPU_TIME = toc;
+fprintf("Total elpsed time to solve minimization problem: %d\n",CPU_TIME);
 
 % save results
 t_f = x_opt(1);

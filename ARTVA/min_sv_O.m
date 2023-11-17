@@ -3,7 +3,12 @@ function min_sv = min_sv_O(O,max_rank)
 
     [~,svs,~] = svd(O,"vector");
 %     min_sv = svs(max_rank);
-    min_sv = svs(rank(O));
+    actual_rk = rank(O);
+    if actual_rk > 0
+        min_sv = svs(actual_rk);
+    else
+        min_sv = svs(1);
+    end
 
 end
 

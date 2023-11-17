@@ -6,7 +6,7 @@ close all;
 NLP_PLANNING = false;
 DOUBLE_PHASE = false;
 RECORD_VIDEO = false;
-COMPUTING_DEVICE_DELAY = false;
+COMPUTING_DEVICE_DELAY = true;
 USE_NMPC = true;
 EXPLORATION_TYPE = "V";  %% select one in the following string list ["V","H","R"]
 CODE_GENERATED_NLP = true;
@@ -19,10 +19,10 @@ N = 5;
 
 % set transimetter initial position
 % orientation is not of interest, imagine the transmitter frame parallel to the inertial one
-transmitter_real_pos = [6 6 1];
+transmitter_real_pos = [20 20 1];
 
 % initial guess for the transmitter
-transmitter_pos_hat = [0 0 3];
+transmitter_pos_hat = [0 0 1];
 
 % color list to indetify each UAV
 color_list = ["green","blue"," #FF8000","cyan","magenta"];
@@ -41,7 +41,7 @@ reciever_INIT(:,3) = 1.5*ones(size(reciever_INIT,1),1);
 % reciever_INIT(4,1:2) = [0 -10];
 % reciever_INIT(5,1:2) = [7.071 -7.071];
 
-hl_length = 10; % [m]
+hl_length = 60; % [m]
 
 if EXPLORATION_TYPE == "V"
     % horizontal spawn ( vertical exploration )

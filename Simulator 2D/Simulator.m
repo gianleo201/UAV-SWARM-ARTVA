@@ -69,14 +69,17 @@ X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
 t_f = 30; % [s]  ( first estimated mission time )
 d_t = 5; % [m]
 % ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
-ObjectiveWeights = [1e-02 10/N 1e-06/N];
+ObjectiveWeights = [1 1e-05/N 1e-04/N];
 % ObjectiveWeights = [1 1e-02 1e-01];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
 problem.solver = 'fmincon';
 
+% problem.options = optimoptions("fmincon",...
+%                 "Algorithm","active-set",...
+%                 "Display","iter-detailed");
+
 problem.options = optimoptions("fmincon",...
-                "Algorithm","active-set",...
                 "Display","iter-detailed");
 
 % problem.options = optimoptions("fmincon",...
@@ -143,7 +146,7 @@ OI_VAL = [my_temp];
 
 % estimate variation
 TRANSMITTER_ESTIMATE_VARIATION = [0];
-ESTIMATE_VARIATION_THRESHOLD = 1e-04;
+ESTIMATE_VARIATION_THRESHOLD = 5e-04;
 
 % estimate error
 TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
@@ -254,7 +257,7 @@ while t_simulation(STEP) < t_simulation(end)
             % plot new estimated mission endtime
             set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
         end
-        t_replanning = t_f-TIME_STEP; % reset timer
+        t_replanning = 10; % reset timer
     
     end
     

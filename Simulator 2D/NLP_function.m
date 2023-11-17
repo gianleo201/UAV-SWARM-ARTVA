@@ -157,7 +157,7 @@ end
 init_cond_feasability_check = (abs(A_clin*x0.'-B_clin) >= 1e-06);
 if any(init_cond_feasability_check)
     fprintf("Initial conditions doesn't satisfy constraints\n");
-    display(init_cond_feasability_check);
+%     display(init_cond_feasability_check);
     fprintf("Dummy row\n");
 else
     fprintf("Initial conditions satisfies constraints\n");

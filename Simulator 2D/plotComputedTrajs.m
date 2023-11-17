@@ -22,6 +22,10 @@ if ~exist('VIZ_planned_trajs','var')
 else
     for i=1:N
         temp = squeeze(UAV_trajs(i,:,:));
-        set(VIZ_planned_trajs{i},'XData',temp(:,1),'YData',temp(:,2));
+        try
+            set(VIZ_planned_trajs{i},'XData',temp(:,1),'YData',temp(:,2));
+        catch
+            fprintf("Numerical problem in generated trajectory\n");
+        end
     end
 end

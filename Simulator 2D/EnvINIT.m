@@ -6,7 +6,7 @@ close all;
 NLP_PLANNING = false;
 DOUBLE_PHASE = true;
 RECORD_VIDEO = false;
-COMPUTING_DEVICE_DELAY = true;
+COMPUTING_DEVICE_DELAY = false;
 USE_NMPC = false;
 CODE_GENERATED_NLP = true;
 EXPLORATION_TYPE = "R";  %% select one in the following string list ["V","H","R"]
@@ -19,6 +19,7 @@ N = 5;
 % set transimetter initial position
 % orientation is not of interest, imagine the transmitter frame parallel to the inertial one
 transmitter_real_pos = [25 25 0];
+% transmitter_real_pos = [-5 -5 0];
 
 % initial guess for the transmitter
 transmitter_pos_hat = [0 0 0];
