@@ -6,7 +6,8 @@ function c_inputs = FL_step(aug_state,out_ref,model_params)
         ref = out_ref;
     end
     
-    K_x = [16 32 24 8];
+%     K_x = [16 32 24 8]; % (4 eigenvalues in -2)
+    K_x = [81 108 54 12]; % (4 eigenvalues in -3) better tracking
     K_psi = [1 2];
 
     curr_state_p = [aug_state(1:3).';

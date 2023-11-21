@@ -10,10 +10,10 @@ addpath("ARTVA","BeBOT","NLP","Communication");
 % rmpath("CPSIM_plugin","Simulator 3D CPSIM","Real UAV","Real UAV/FL controller");
 
 % 3D CPSIM LINUX
-% addpath("CPSIM_plugin_linux","Simulator 3D CPSIM","Real UAV","Real UAV/FL controller");
+addpath("CPSIM_plugin_linux","Simulator 3D CPSIM","Real UAV","Real UAV/FL controller");
 % rmpath("CPSIM_plugin_linux","Simulator 3D CPSIM","Real UAV","Real UAV/FL controller");
 
 
 % ACADO toolkit
-% addpath("ACADO_NMPC");
+addpath("ACADO_NMPC");
 % rmpath("ACADO_NMPC");

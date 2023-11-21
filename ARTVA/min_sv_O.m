@@ -7,7 +7,7 @@ function min_sv = min_sv_O(O,max_rank)
     if actual_rk > 0
         min_sv = svs(actual_rk);
     else
-        min_sv = svs(1);
+        min_sv = 0;
     end
 
 end

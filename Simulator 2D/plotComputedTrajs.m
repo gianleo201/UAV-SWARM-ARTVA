@@ -3,6 +3,8 @@ if ~exist('VIZ_planned_trajs','var')
     % show computed trajs
 
     animation_figure = figure(1); axis equal; hold on;
+    set(gcf,'Position',[0 0 1 1]);
+    pause(1);
     grid on;
     if ~exist("hl_length","var")
         xlim([-30 30]);

@@ -6,12 +6,14 @@ close all;
 NLP_PLANNING = false;
 DOUBLE_PHASE = true;
 RECORD_VIDEO = false;
-COMPUTING_DEVICE_DELAY = false;
+COMPUTING_DEVICE_DELAY = true;
 USE_NMPC = false;
 CODE_GENERATED_NLP = true;
-EXPLORATION_TYPE = "R";  %% select one in the following string list ["V","H","R"]
+EXPLORATION_TYPE = "V";  %% select one in the following string list ["V","H","R"]
 
 %% ENVIRONMENT INITIALIZATION
+
+NLP_LOG = ""; % string that containts informations on NLPs solved
 
 % set up number of reciever agent
 N = 5;

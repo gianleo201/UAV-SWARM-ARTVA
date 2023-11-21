@@ -3,7 +3,7 @@ close all;
 
 %% EXECUTION FLAGS
 
-NLP_PLANNING = false;
+NLP_PLANNING = true;
 DOUBLE_PHASE = false;
 RECORD_VIDEO = false;
 COMPUTING_DEVICE_DELAY = true;
@@ -14,6 +14,8 @@ NLP_AND_NMPC = true;
 
 %% ENVIRONMENT INITIALIZATION
 
+NLP_LOG = ""; % string that containts informations on NLPs solved
+
 % set up number of reciever agent
 N = 5;
 
@@ -22,7 +24,7 @@ N = 5;
 transmitter_real_pos = [20 20 1];
 
 % initial guess for the transmitter
-transmitter_pos_hat = [0 0 1];
+transmitter_pos_hat = [0 0 1.5];
 
 % color list to indetify each UAV
 color_list = ["green","blue"," #FF8000","cyan","magenta"];
@@ -91,6 +93,7 @@ else
     end
     fprintf("Security distance among UAVs set to: %.2f\n",d_safe);
 end
+
 v_max = 5; % [m/s]
 
 %% NMPC CONTROLLER INIT

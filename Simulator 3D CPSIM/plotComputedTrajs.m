@@ -3,6 +3,9 @@ if ~exist('VIZ_planned_trajs','var')
     % show computed trajs
 
     animation_figure = figure(1); axis equal; hold on;
+    set(gcf,'Position',[0 0 1 1]);
+    set(gcf,"Windowstate","maximized");
+    pause(1);
     grid on;
     if ~exist("hl_length","var")
         xlim([-30 30]);
@@ -23,5 +26,6 @@ else
     for i=1:N
         temp = squeeze(UAV_trajs(i,:,:));
         set(VIZ_planned_trajs{i},'XData',temp(:,1),'YData',temp(:,2));
+        drawnow;
     end
 end

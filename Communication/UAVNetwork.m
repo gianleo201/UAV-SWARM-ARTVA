@@ -127,10 +127,10 @@ classdef UAVNetwork < handle
 %                 end
 %                 non_neigh = [non_neigh;zeros(obj.NUM_UAVS-num_non_neigh,3)];
                 if ~obj.THREE_DIMENSIONAL
-                    [nearest_obs,min_dist] = UAVNetwork.compute_nearest_obs([recievers_pos_ode0(i,1:2) 0],[recievers_pos_ode0(1:size(recievers_pos_ode0,1) ~= i,1:2) zeros(size(recievers_pos_ode0,1)-1,1)]);
+                    [nearest_obs,min_dist,min_index] = UAVNetwork.compute_nearest_obs([recievers_pos_ode0(i,1:2) 0],[recievers_pos_ode0(1:size(recievers_pos_ode0,1) ~= i,1:2) zeros(size(recievers_pos_ode0,1)-1,1)]);
                     non_neigh = [nearest_obs;zeros(2,3)];
                 else
-                    [nearest_obs,min_dist] = UAVNetwork.compute_nearest_obs(recievers_pos_ode0(i,1:3),recievers_pos_ode0(1:size(recievers_pos_ode0,1) ~= i,1:3));
+                    [nearest_obs,min_dist,min_index] = UAVNetwork.compute_nearest_obs(recievers_pos_ode0(i,1:3),recievers_pos_ode0(1:size(recievers_pos_ode0,1) ~= i,1:3));
                     non_neigh = [nearest_obs;zeros(2,3)];
                 end
 
@@ -141,13 +141,17 @@ classdef UAVNetwork < handle
                     non_neigh = zeros(3,3);
                     obj.UAVS{i}.TRACKED_OBS = false;
                 elseif ~obj.UAVS{i}.TRACKED_OBS && min_dist <= obj.SENSING_HORIZON
-                    obj.UAVS{i}.TRACKED_OBS = true;
+                    obj.UAVS{i}.TRACKED_OBS = min_index;
                 elseif ~obj.UAVS{i}.TRACKED_OBS && min_dist >=  obj.SENSING_HORIZON
                     num_non_neigh = -1;
                     non_neigh = zeros(3,3);
                 elseif obj.UAVS{i}.TRACKED_OBS && min_dist <= obj.SENSING_HORIZON
-                    non_neigh(2,:) = (non_neigh(1,:)-prev_non_neigh_matrix(1,:))/obj.NMPC_handle.PredictionHorizon;
-                    non_neigh(3,:) = (non_neigh(2,:)-prev_non_neigh_matrix(2,:))/obj.NMPC_handle.PredictionHorizon;
+                    if min_index == obj.UAVS{i}.TRACKED_OBS
+                        non_neigh(2,:) = (non_neigh(1,:)-prev_non_neigh_matrix(1,:))/obj.NMPC_handle.PredictionHorizon;
+                        non_neigh(3,:) = (non_neigh(2,:)-prev_non_neigh_matrix(2,:))/obj.NMPC_handle.PredictionHorizon;
+                    else
+                        obj.UAVS{i}.TRACKED_OBS = min_index;
+                    end
                 end
                 
                 %%
@@ -177,34 +181,91 @@ classdef UAVNetwork < handle
                 obj.UAVS{i}.CPU_TIME = [];
 
                 %% ACADO initialization
+
                 if obj.THREE_DIMENSIONAL
                 obj.UAVS{i}.gravity_compensation = model_params(6)*model_params(7)/4;
                 obj.UAVS{i}.ACADO_input = struct;
                 obj.UAVS{i}.ACADO_input.u = repmat(obj.UAVS{i}.gravity_compensation*ones(1,4),NMPC_handle.PredictionHorizon,1);
                 obj.UAVS{i}.ACADO_input.x = repmat(X0,NMPC_handle.PredictionHorizon+1,1);
+%                 obj.UAVS{i}.ACADO_input.u = repmat(zeros(1,4),NMPC_handle.PredictionHorizon,1);
+%                 obj.UAVS{i}.ACADO_input.x = repmat([X0 obj.UAVS{i}.gravity_compensation*ones(1,4)],NMPC_handle.PredictionHorizon+1,1);
+
+%                 % weights on input
+%                 Wu = (1/0.001)^2; 
+%                 % state weights
+%                 Wx = (1/0.01)^2;
+%                 Wdx = (1/0.5)^2;
+%                 % Wdx = 0;
+%                 W_phi_theta = (1/(pi/3))^2;
+%                 W_psi = (1/0.01)^2;
+%                 W_pqr = (1/((1e-04*pi/2)/0.05))^2;
+% %                 W_pqr = 0;
+% 
+%                 obj.UAVS{i}.ACADO_input.W = diag([Wx*ones(1,3) Wdx*ones(1,3) W_pqr*ones(1,3) W_psi Wu*ones(1,4)]);
+%                 obj.UAVS{i}.ACADO_input.WN = diag([Wx*ones(1,3) Wdx*ones(1,3) W_pqr*ones(1,3) W_psi]);
+                
                 % weights on input
-                Wu = (1/0.0008)^2; 
+                Wu = (1/0.0001)^2; 
                 % state weights
-                Wx = (1/0.01)^2;
+%                 Wx = (1/0.001)^2;
+                Wx = (1/0.001)^2;
+                Wz = (1/0.00005)^2;
+%                 Wz = (1/0.0001)^2;
                 Wdx = (1/0.01)^2;
                 % Wdx = 0;
-                W_phi_theta = (1/(pi/3))^2;
-                W_psi = (1/0.01)^2;
-                W_pqr = (1/((1e-04*pi/2)/0.05))^2;
-%                 W_pqr = 0;
-                obj.UAVS{i}.ACADO_input.W = diag([Wx*ones(1,3) Wdx*ones(1,3) W_pqr*ones(1,3) W_psi Wu*ones(1,4)]);
-                obj.UAVS{i}.ACADO_input.WN = diag([Wx*ones(1,3) Wdx*ones(1,3) W_pqr*ones(1,3) W_psi]);
-                pole_0 = max(10,-CBF_h_f(obj.UAVS{i}.X,non_neigh(1,:),obj.d_safe)/CBF_h_f_dot(obj.UAVS{i}.X(1:6),[non_neigh(1,:) non_neigh(2,:)],obj.d_safe));
-                pole_1 = 10;
+                W_phi_theta = (1/0.5)^2;
+                W_psi = (1/0.001)^2;
+                W_pqr = (1/0.1)^2;
+                % W_pqr = 0;
+
+%                 obj.UAVS{i}.ACADO_input.W = diag([Wx*ones(1,3) Wdx*ones(1,3) W_pqr*ones(1,3) W_phi_theta*ones(1,2) W_psi Wu*ones(1,4)]);
+%                 obj.UAVS{i}.ACADO_input.WN = diag([Wx*ones(1,3) Wdx*ones(1,3) W_pqr*ones(1,3) W_phi_theta*ones(1,2) W_psi]);
+
+                obj.UAVS{i}.ACADO_input.W = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_phi_theta*ones(1,2) W_psi Wu*ones(1,4)]);
+                obj.UAVS{i}.ACADO_input.WN = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_phi_theta*ones(1,2) W_psi]);
+                
+                % tune terminal cost with 
+                dummy_cell = cell(1,6);
+                [J_x,J_u] = quadrotor_model_jac(zeros(12,1),obj.UAVS{i}.gravity_compensation*ones(4,1),dummy_cell{:},model_params);
+                Qs = {obj.UAVS{i}.ACADO_input.W(1:6,1:6),zeros(3,3),obj.UAVS{i}.ACADO_input.W(7:9,7:9)};
+                Q = blkdiag(Qs{:});
+                R = obj.UAVS{i}.ACADO_input.W(10:13,10:13);
+                [~,P,~] = lqr(J_x,J_u,Q,R);
+                new_Ps = {P(1:6,1:6),P(10:12,10:12)};
+                new_P = blkdiag(new_Ps{:});
+                obj.UAVS{i}.ACADO_input.WN = new_P;
+                
+
+                % solution with weights also on input rate
+%                 % input weights
+%                 Wu = (1/0.0001)^2; 
+%                 W_du = (1/100)^2;
+%                 % W_du = 0;
+%                 % state weights
+%                 Wx = (1/0.001)^2;
+%                 Wz = (1/0.001)^2;
+%                 Wdx = (1/0.01)^2;
+%                 % Wdx = 0;
+%                 W_phi_theta = (1/100)^2;
+% %                 W_phi_theta = 0;
+%                 W_psi = (1/0.001)^2;
+%                 % W_pqr = (1/0.1)^2;
+%                 
+%                 obj.UAVS{i}.ACADO_input.W = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_phi_theta*ones(1,2) W_psi Wu*ones(1,4) W_du*ones(1,4)]);
+%                 obj.UAVS{i}.ACADO_input.WN = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_phi_theta*ones(1,2) W_psi]);
+
+
+                % fictitious first pole assignment
+                pole_0 = max(20,-CBF_h_f_dot(obj.UAVS{i}.X(1:6),[non_neigh(1,:) non_neigh(2,:)],obj.d_safe)/CBF_h_f(obj.UAVS{i}.X,non_neigh(1,:),obj.d_safe));
+                pole_1 = 35;
                 if num_non_neigh == 3
                     obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 1 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1);
                 elseif num_non_neigh == -1
                     obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 0 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1);
                 end
+                
+%                 obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 0 0 0],obj.NMPC_handle.PredictionHorizon+1,1);
 
-%                 obj.UAVS{i}.OD.weights.y = [Wx*ones(1,3) Wdx*ones(1,3) W_pqr*ones(1,3) W_psi];
-%                 obj.UAVS{i}.OD.weights.u = zeros(1,4); %Wu*ones(1,4);
-%                 obj.UAVS{i}.OD.weights.du = zeros(1,4);
                 end
 
                 %% sigma travelled
@@ -379,12 +440,23 @@ classdef UAVNetwork < handle
         end
 
         %% FL STEP
-        function Us = FL_UAV_TEAM_step(obj,curr_Refs)
+        function Us = FL_UAV_TEAM_step(obj)
             Us = zeros(obj.NUM_UAVS,4);
             for i = 1:obj.NUM_UAVS
                 % do FL step
                 x_k_aug = [obj.UAVS{i}.X obj.UAVS{i}.FL_THRUST obj.UAVS{i}.FL_DTHRUST].';
-                ref_k = [curr_Refs(i,1:2) 2 0;curr_Refs(i,3:4) 0  0;zeros(2,4)];
+
+%                 ref_k = [curr_Refs(i,1:2) 1.5 0;curr_Refs(i,3:4) 0  0;zeros(2,4)];
+%                 ref_k = [curr_Refs(i,1:2) 1.5+(i-1) 0;curr_Refs(i,3:4) 0  0;zeros(2,4)];
+
+                if obj.UAVS{i}.trajectory_step >= size(obj.UAVS{i}.trajectory_ref,1)
+                    temp = [obj.UAVS{i}.trajectory_ref(end,1:2) 0 0];
+                else
+                    temp = obj.UAVS{i}.trajectory_ref(obj.UAVS{i}.trajectory_step,:);
+                    obj.UAVS{i}.trajectory_step = obj.UAVS{i}.trajectory_step + 1;
+                end
+
+                ref_k = [temp(1:2) 1.5+(i-1) 0;temp(3:4) 0  0;zeros(2,4)];
                 T_mod = FL_step(x_k_aug,ref_k,obj.UAVS{i}.model_params);
                 % compute real input
                 U = input_mapping([obj.UAVS{i}.FL_THRUST;T_mod(2:4,1)],obj.UAVS{i}.model_params).';
@@ -394,8 +466,8 @@ classdef UAVNetwork < handle
                 % apply saturation function
                 for j = 1:4; if U(j)< 0; U(j)=0; else; if U(j) > 10; U(j) = 10; end; end; end
                 % update controller state
-                obj.UAVS{i}.FL_DTHRUST = obj.UAVS{i}.FL_DTHRUST + T_mod(1)*obj.TIME_STEP;
                 obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
+                obj.UAVS{i}.FL_DTHRUST = obj.UAVS{i}.FL_DTHRUST + T_mod(1)*obj.TIME_STEP;
                 Us(i,:) = U;
             end
         end
@@ -403,7 +475,9 @@ classdef UAVNetwork < handle
         %% NMPC STEP
 
         function Us = NMPC_UAV_TEAM_step(obj)
+
             Us = [];
+
             %% delay in computing control
             if obj.DELAY_SYNC == 0
                 obj.DELAY_SYNC = 2;
@@ -415,9 +489,9 @@ classdef UAVNetwork < handle
                 obj.DELAY_SYNC = obj.DELAY_SYNC - 1;
                 return;
             end
+
             for i = 1 : obj.NUM_UAVS
-                %% NMPC step
-                
+                %% Prepare reference trajectory
 
                 if obj.FOLLOW_TRAJECTORY
 
@@ -436,23 +510,39 @@ classdef UAVNetwork < handle
                     temp = obj.UAVS{i}.trajectory_ref(k_0:k_f,:);
                     l = k_f-k_0+1;
                     curr_z = obj.UAVS{i}.X(3);
-%                     first_part = [temp(:,1:2) curr_z*ones(l,1) temp(:,3:4) zeros(l,1) zeros(l,6)];
-%                     end_part = repmat([temp(end,1:3) zeros(1,9)],k_suppl,1);
 
-%                     first_part = [temp(:,1:2) curr_z*ones(l,1) temp(:,3:4) zeros(l,1) zeros(l,1)];
-%                     end_part = repmat([temp(end,1:3) zeros(1,4)],k_suppl,1);
+%                     first_part = [temp(:,1:2) 1.5*ones(l,1) temp(:,3:4) zeros(l,1) zeros(l,4)]; % [x y z dx dy dz p q r psi];
+%                     end_part = repmat([temp(end,1:2) 1.5 zeros(1,7)],k_suppl,1);
 
-%                     first_part = [temp(:,1:2) curr_z*ones(l,1) temp(:,3:4) zeros(l,1) zeros(l,4)];
-%                     end_part = repmat([temp(end,1:2) curr_z zeros(1,7)],k_suppl,1);
+%                     first_part = [temp(:,1:2) 1.5*ones(l,1) temp(:,3:4) zeros(l,1) zeros(l,6)]; % full state
+%                     end_part = repmat([temp(end,1:2) 1.5 zeros(1,9)],k_suppl,1);
 
-                    first_part = [temp(:,1:2) 1.5*ones(l,1) temp(:,3:4) zeros(l,1) zeros(l,4)];
-                    end_part = repmat([temp(end,1:2) 1.5 zeros(1,7)],k_suppl,1);
+
+%                     first_part = [temp(:,1:2) 1.5*ones(l,1) temp(:,3:4) zeros(l,1) zeros(l,3)]; % [x y z dx dy dz phi theta psi];
+%                     end_part = repmat([temp(end,1:2) 1.5*z_ref zeros(1,6)],k_suppl,1);
+
+                    z_ref = 1.5+(i-1);
+                    z_refs = zeros(l,1);
+                    z_refs(1) = curr_z;
+                    lambda = 0.005;
+                    for st = 2:l
+                        z_refs(st) = (1-lambda) * z_refs(st-1) + lambda * z_ref;
+                    end
+
+                    first_part = [temp(:,1:2) z_refs temp(:,3:4) zeros(l,1) zeros(l,3)]; % [x y z dx dy dz phi theta psi];
+                    end_part = repmat([temp(end,1:2) z_refs(end) zeros(1,6)],k_suppl,1);
+                    
                     obj.UAVS{i}.OD.ref = [first_part;end_part];
 
                     % ACADO
                     obj.UAVS{i}.ACADO_input.x0 = obj.UAVS{i}.X;
                     obj.UAVS{i}.ACADO_input.y = [[first_part;end_part] repmat(obj.UAVS{i}.gravity_compensation*ones(1,4),obj.NMPC_handle.PredictionHorizon,1)];
                     obj.UAVS{i}.ACADO_input.yN = obj.UAVS{i}.OD.ref(end,:);
+
+%                     % ACADO
+%                     obj.UAVS{i}.ACADO_input.x0 = [obj.UAVS{i}.X obj.UAVS{i}.ACADO_input.x(1,end-3:end)];
+%                     obj.UAVS{i}.ACADO_input.y = [[first_part;end_part] repmat([obj.UAVS{i}.gravity_compensation*ones(1,4) zeros(1,4)],obj.NMPC_handle.PredictionHorizon,1)];
+%                     obj.UAVS{i}.ACADO_input.yN = obj.UAVS{i}.OD.ref(end,:);
 
                 else
                     if ~obj.THREE_DIMENSIONAL
@@ -467,14 +557,17 @@ classdef UAVNetwork < handle
                                     obj.UAVS{i}.prediction_horizon);
                     
 %                     obj.UAVS{i}.OD.ref = obj.UAVS{i}.OD.ref(:,1:4);
-                    obj.UAVS{i}.OD.ref = obj.UAVS{i}.OD.ref(:,[1 2 3 4 5 6 7 8 9 12]);
+%                     obj.UAVS{i}.OD.ref = obj.UAVS{i}.OD.ref(:,[1 2 3 4 5 6 7 8 9 12]);
+                    obj.UAVS{i}.OD.ref = obj.UAVS{i}.OD.ref(:,[1 2 3 4 5 6 10 11 12]);
 
                     % ACADO
                     obj.UAVS{i}.ACADO_input.x0 = obj.UAVS{i}.X;
-                    obj.UAVS{i}.ACADO_input.y = [[obj.UAVS{i}.X(:,[1 2 3 4 5 6 7 8 9 12]);obj.UAVS{i}.OD.ref] repmat(obj.UAVS{i}.gravity_compensation*ones(1,4),obj.NMPC_handle.PredictionHorizon,1)];
+%                     obj.UAVS{i}.ACADO_input.x0 = [obj.UAVS{i}.X obj.UAVS{i}.ACADO_input.x(1,end-3:end)];
+                    obj.UAVS{i}.ACADO_input.y = [[obj.UAVS{i}.X(:,[1 2 3 4 5 6 10 11 12]);obj.UAVS{i}.OD.ref] repmat(obj.UAVS{i}.gravity_compensation*ones(1,4),obj.NMPC_handle.PredictionHorizon,1)];
                     obj.UAVS{i}.ACADO_input.yN = obj.UAVS{i}.OD.ref(end,:);
                 end
 
+                %% NMPC step
                
 %                 tic;
 %                 [nmpc_mv, new_OD, info] = NMPC_STEP(obj.NMPC_handle, ...
@@ -511,7 +604,16 @@ classdef UAVNetwork < handle
                 obj.UAVS{i}.ACADO_input.x = [out.x(2:end,:);out.x(end,:)];
                 obj.UAVS{i}.ACADO_input.u = [out.u(2:end,:);out.u(end,:)];
                 nmpc_mv = out.u(1,:).';
+%                 nmpc_mv = out.x(1,end-3:end).';
                 obj.UAVS{i}.U = nmpc_mv.';
+
+                % inspect ACADO output
+                if out.info.status ~= 0
+                    fprintf("UAV %d: QP solver with non-zero exit status %d\n",i,out.info.status);
+                end
+                if isnan(any(out.u(1,:)))
+                    fprintf("Ill conditioned solver\n");
+                end
 
                 %% return input
                 if ~obj.THREE_DIMENSIONAL
@@ -576,10 +678,10 @@ classdef UAVNetwork < handle
 
                 prev_non_neigh_matrix = obj.UAVS{i}.OD.Parameters{3};
                 if ~obj.THREE_DIMENSIONAL
-                    [nearest_obs,min_dist] = UAVNetwork.compute_nearest_obs([recievers_pos_ode(i,1:2) 0],[recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,1:2) zeros(size(recievers_pos_ode,1)-1,1)]);
+                    [nearest_obs,min_dist,min_index] = UAVNetwork.compute_nearest_obs([recievers_pos_ode(i,1:2) 0],[recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,1:2) zeros(size(recievers_pos_ode,1)-1,1)]);
                     non_neigh = [nearest_obs;zeros(2,3)];
                 else
-                    [nearest_obs,min_dist] = UAVNetwork.compute_nearest_obs(recievers_pos_ode(i,1:3),recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,1:3));
+                    [nearest_obs,min_dist,min_index] = UAVNetwork.compute_nearest_obs(recievers_pos_ode(i,1:3),recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,1:3));
                     non_neigh = [nearest_obs;zeros(2,3)];
                     
                 end
@@ -591,17 +693,21 @@ classdef UAVNetwork < handle
                 if obj.UAVS{i}.TRACKED_OBS && min_dist >= obj.SENSING_HORIZON
                     num_non_neigh = -1;
                     non_neigh = zeros(3,3);
-                    obj.UAVS{i}.TRACKED_OBS = false;
+                    obj.UAVS{i}.TRACKED_OBS = 0;
                 elseif ~obj.UAVS{i}.TRACKED_OBS && min_dist <= obj.SENSING_HORIZON
-                    obj.UAVS{i}.TRACKED_OBS = true;
+                    obj.UAVS{i}.TRACKED_OBS = min_index;
 %                     fprintf("UAV %d detected obs\n",i);
                 elseif ~obj.UAVS{i}.TRACKED_OBS && min_dist >=  obj.SENSING_HORIZON
                     num_non_neigh = -1;
                     non_neigh = zeros(3,3);
                 elseif obj.UAVS{i}.TRACKED_OBS && min_dist <= obj.SENSING_HORIZON
 %                     fprintf("UAV %d detected obs\n",i);
-                    non_neigh(2,:) = (non_neigh(1,:)-prev_non_neigh_matrix(1,:))/obj.NMPC_handle.PredictionHorizon;
-                    non_neigh(3,:) = (non_neigh(2,:)-prev_non_neigh_matrix(2,:))/obj.NMPC_handle.PredictionHorizon;
+                    if min_index == obj.UAVS{i}.TRACKED_OBS 
+                        non_neigh(2,:) = (non_neigh(1,:)-prev_non_neigh_matrix(1,:))/obj.NMPC_handle.PredictionHorizon;
+                        non_neigh(3,:) = (non_neigh(2,:)-prev_non_neigh_matrix(2,:))/obj.NMPC_handle.PredictionHorizon;
+                    else
+                        obj.UAVS{i}.TRACKED_OBS = min_index;
+                    end
                 end
                 
                 %%
@@ -622,20 +728,26 @@ classdef UAVNetwork < handle
 
                 end
 
-%                 if num_non_neigh == 3
-%                     obs_od_data = [positions repmat([v_hat a_hat obj.d_safe 1],obj.NMPC_handle.PredictionHorizon+1,1)];
-%                 elseif num_non_neigh == -1
-%                     obs_od_data = [positions repmat([v_hat a_hat obj.d_safe 0],obj.NMPC_handle.PredictionHorizon+1,1)];
-%                 end
-%                 obj.UAVS{i}.ACADO_input.od = obs_od_data;
-                pole_0 = max(10,-CBF_h_f(obj.UAVS{i}.X,non_neigh(1,:),obj.d_safe)/CBF_h_f_dot(obj.UAVS{i}.X(1:6),[non_neigh(1,:) non_neigh(2,:)],obj.d_safe));
-                pole_1 = 10;
-                if num_non_neigh == 3
-                    obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 1 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1);
-                elseif num_non_neigh == -1
-                    obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 0 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1);
-                end
+                % CBF poles placement
+                pole_0 = max(10,-CBF_h_f_dot(obj.UAVS{i}.X(1:6),[non_neigh(1,:) non_neigh(2,:)],obj.d_safe)/CBF_h_f(obj.UAVS{i}.X,non_neigh(1,:),obj.d_safe));
+                pole_1 = 200;
 
+
+%                 if num_non_neigh == 3
+%                     obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 1 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1);
+%                 elseif num_non_neigh == -1
+%                     obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 0 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1);
+%                 end
+
+                if num_non_neigh == 3
+                    obs_od_data = [positions repmat([v_hat a_hat obj.d_safe 1 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1)];
+                elseif num_non_neigh == -1
+                    obs_od_data = [positions repmat([v_hat a_hat obj.d_safe 0 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1)];
+                end
+                obj.UAVS{i}.ACADO_input.od = obs_od_data;
+
+
+%                 obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 0 0 0],obj.NMPC_handle.PredictionHorizon+1,1);
                 
 
                 %% sigma travelled
@@ -709,16 +821,40 @@ classdef UAVNetwork < handle
 
             end
         end
+    
+        function stop_UAVS(obj)
+            for i = 1 : N
+                obj.UAVS{i}.trajectory_ref = [obj.UAVS{i}.trajectory_ref(obj.UAVS{i}.trajectory_step,1:2) 0 0];
+                obj.UAVS{i}.trajectory_step = 1;
+            end
+        end
+
+        function stop_ith_UAV(obj,i)
+            N = 40;
+            start_ref = obj.UAVS{i}.trajectory_ref(obj.UAVS{i}.trajectory_step,:);
+            stopping_ref = [obj.UAVS{i}.trajectory_ref(obj.UAVS{i}.trajectory_step,1:2) 0 0];
+            new_ref = zeros(N,4);
+            new_ref(1,:) = start_ref;
+            lambda = 0.1;
+            for k = 2:N
+                new_ref(k,:) = (1-lambda) * new_ref(k-1,:) + lambda * stopping_ref;
+            end
+            obj.UAVS{i}.trajectory_ref = new_ref;
+            obj.UAVS{i}.trajectory_step = 1;
+        end
+
     end
 
     methods(Static)
-        function [x_nearest_obs,min_dist] = compute_nearest_obs(x,x_neighs)
+        function [x_nearest_obs,min_dist,min_index] = compute_nearest_obs(x,x_neighs)
                 x_nearest_obs = x_neighs(1,:);
                 min_dist = norm(x-x_neighs(1,:));
+                min_index = 1;
                 for i = 1:size(x_neighs,1)
                     if norm(x-x_neighs(i,:)) < min_dist
                         x_nearest_obs = x_neighs(i,:);
                         min_dist = norm(x-x_neighs(i,:));
+                        min_index = i;
                     end
                 end
         end

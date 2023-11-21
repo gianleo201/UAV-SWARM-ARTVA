@@ -183,23 +183,23 @@ if CHANGE_OF_INPUT
     input_mapping = simplify(input_mapping_matrix*sym_model_inputs);
     clear T1 T2 T3 T4;
 
-    if ~exist("./FL controller","dir")
-        mkdir("FL controller");
-    end
-    cd("FL controller");
-    % convert new inputs into blades thrusts
-    matlabFunction(input_mapping,'file','input_mapping.m','vars',{sym_model_inputs,sym_model_params});
-    % matrix to conver thusts into new inputs
-    matlabFunction(TM,'file','inv_input_mapping_matrix.m','vars',{sym_model_params});
-    % compute acceleration
-    matlabFunction(pos_acc,'file','compute_pos_acc.m','vars',{simplified_states_aug2,sym_model_params});
-    % compute jerk
-    matlabFunction(pos_jerk,'file','compute_pos_jerk.m','vars',{simplified_states_aug2,sym_model_params});
-    % compute decoupling matrix inverse
-    matlabFunction(inv_DM2,'file','inv_DM.m','vars',{simplified_states_aug2,sym_model_params});
-    % compute feedback compensation
-    matlabFunction(D2,'file','compensation_term.m','vars',{simplified_states_aug2,sym_model_params});
-    cd ..
+%     if ~exist("./FL controller","dir")
+%         mkdir("FL controller");
+%     end
+%     cd("FL controller");
+%     % convert new inputs into blades thrusts
+%     matlabFunction(input_mapping,'file','input_mapping.m','vars',{sym_model_inputs,sym_model_params});
+%     % matrix to conver thusts into new inputs
+%     matlabFunction(TM,'file','inv_input_mapping_matrix.m','vars',{sym_model_params});
+%     % compute acceleration
+%     matlabFunction(pos_acc,'file','compute_pos_acc.m','vars',{simplified_states_aug2,sym_model_params});
+%     % compute jerk
+%     matlabFunction(pos_jerk,'file','compute_pos_jerk.m','vars',{simplified_states_aug2,sym_model_params});
+%     % compute decoupling matrix inverse
+%     matlabFunction(inv_DM2,'file','inv_DM.m','vars',{simplified_states_aug2,sym_model_params});
+%     % compute feedback compensation
+%     matlabFunction(D2,'file','compensation_term.m','vars',{simplified_states_aug2,sym_model_params});
+%     cd ..
 
 end
 

@@ -146,7 +146,7 @@ OI_VAL = [my_temp];
 
 % estimate variation
 TRANSMITTER_ESTIMATE_VARIATION = [0];
-ESTIMATE_VARIATION_THRESHOLD = 5e-04;
+ESTIMATE_VARIATION_THRESHOLD = 1e-04;
 
 % estimate error
 TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
@@ -155,8 +155,8 @@ TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat
 if COMPUTING_DEVICE_DELAY
     NOMINAL_TRANSMISSION_DISTANCE = 50; % [m] is the distance between any UAV and the estimation device such that the nominal transmission time is the sample time
     medium_velocity = NOMINAL_TRANSMISSION_DISTANCE/TIME_STEP; % [m/s]
-    uncertain_time_range = 10*TIME_STEP; % [s]
-    estimation_device_pos = [0 -100 0];
+    uncertain_time_range = 50*TIME_STEP; % [s]
+    estimation_device_pos = [0 -35 0];
     AS = Dispatcher(N,TIME_STEP,recievers_pos_ode,NaN,NaN);
 end
 
@@ -207,10 +207,11 @@ if RECORD_VIDEO
     vid_name = "MV-"+this_time;
     vid_name = regexprep(vid_name," ",":");
     vid_name = regexprep(vid_name,":","-");
-    writerObj = VideoWriter(vid_name,'MPEG-4');
+    writerObj = VideoWriter(vid_name,'Motion JPEG AVI');
     % set the seconds per image
     approx_magnitude = 1;
     writerObj.FrameRate = 1/TIME_STEP;
+    writerObj.Quality = 85;
     % open the writer
     open(writerObj);
 end
@@ -402,7 +403,7 @@ if RECORD_VIDEO
            mkdir('./Movies');
     end
     close(writerObj);
-    movefile(vid_name+".mp4",'./Movies/.');
+    movefile(vid_name+".avi",'./Movies/.');
 end
 
 %% PLOTS
@@ -458,9 +459,10 @@ grid on; hold on;
 title("Observability index");
 xlabel("time [s]");
 xlim([0 TIME_STEP*STEP]);
-plot(t_simulation(1:STEP),OI_VAL,"Color","Black","LineWidth",1.5);
-plot(t_simulation(1:STEP),repmat(SIGMA_TRESHOLD,STEP,1),"--","Color","Black","LineWidth",1.5);
+plot(t_simulation(1:STEP),OI_VAL,"Color","Black","LineWidth",2.0);
+plot(t_simulation(1:STEP),repmat(SIGMA_TRESHOLD,STEP,1),"--","Color","red","LineWidth",1.5);
 hold off;
+legend("O.I","O.I. threshold","Location","Best");
 save SIGMA_TRESHOLD.mat SIGMA_TRESHOLD;
 saveas(fig4,'./tmp_dir/OI.png');
 saveas(fig4,'./tmp_dir/OI.fig');
@@ -473,7 +475,7 @@ title("Transmitter position estimate variation")
 xlabel("time [s]");
 ylabel("[m]");
 xlim([0 TIME_STEP*STEP]);
-plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_VARIATION,"Color","Black","LineWidth",1.5);
+plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_VARIATION,"Color","Black","LineWidth",2.0);
 hold off;
 saveas(fig5,'./tmp_dir/TEV.png');
 saveas(fig5,'./tmp_dir/TEV.fig');
@@ -487,7 +489,7 @@ xlabel("time [s]");
 ylabel("[m]");
 xlim([0 TIME_STEP*STEP]);
 ylim([0 5]);
-plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_ERROR,"Color","Black","LineWidth",1.5);
+plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_ERROR,"Color","Black","LineWidth",2.0);
 hold off;
 if COMPUTING_DEVICE_DELAY
     save TRANSMITTER_ESTIMATE_ERROR.mat TRANSMITTER_ESTIMATE_ERROR;
@@ -507,7 +509,7 @@ ylabel("[m]");
 xlim([0 TIME_STEP*STEP]);
 ylim([0 5]);
 for i = 1 : N
-    plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_DRLS_DEVIATION(:,i).',"Color",color_list(i),"LineWidth",1.5);
+    plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_DRLS_DEVIATION(:,i).',"Color",color_list(i),"LineWidth",2.0);
 end
 hold off;
 saveas(fig7,'./tmp_dir/DRLS_deviation.png');
@@ -523,13 +525,13 @@ if USE_NMPC
     xlim([0 TIME_STEP*STEP]);
     ylim([0 2*TIME_STEP]);
     for i = 1 : N
-        plot(t_simulation(1:STEP-1),UAV_NET.UAVS{i}.CPU_TIME(1:STEP-1),"Color",color_list(i),"LineWidth",1.5);
+        plot(t_simulation(1:STEP-1),UAV_NET.UAVS{i}.CPU_TIME(1:STEP-1),"Color",color_list(i),"LineWidth",2.0);
         
     end
     plot(t_simulation(1:STEP-1),repmat(TIME_STEP,STEP-1,1),"--","Color","black","LineWidth",1.5);
     lgnd = cell(1,N+1);
     for i = 1 :N
-        lgnd{i} = "CPU TIME UAV "+num2str(i);
+        lgnd{i} = "UAV "+num2str(i);
     end
     lgnd{i+1} = "MAX CPU TIME";
     legend(lgnd);

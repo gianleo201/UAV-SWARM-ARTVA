@@ -19,12 +19,12 @@ beta_ff = 0.99; % forgetly factor
 % RLS algorithm initialization
 % S_RLS = diag(repmat(1,1,10)); % initial covariance matrix
 % S_RLS = diag(repmat(1000,1,10)); % initial covariance matrix
-% S_RLS = diag([1 1 1 1 1 1 ...
+S_RLS = diag([1 1 1 1 1 1 ...
+             (hl_length^2)/12 (hl_length^2)/12 1 ...
+             (hl_length^4)/9]); % initial covariance matrix
+% S_RLS = diag([10 10 10 10 10 10 ...
 %              (hl_length^2)/12 (hl_length^2)/12 1 ...
 %              (hl_length^4)/9]); % initial covariance matrix
-S_RLS = diag([10 10 10 10 10 10 ...
-             (hl_length^2)/12 (hl_length^2)/12 10 ...
-             (hl_length^4)/9]); % initial covariance matrix
 % transmitter_pos_hat = [0 0 0]; % initial guess for the transmitter
 last_replanning_transmitter_pos_hat = transmitter_pos_hat; % keep memory at each replanning
 M_hat = [b^2   0      0;
@@ -40,7 +40,9 @@ X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
 t_f = 30; % [s]  ( first estimated mission time )
 d_t = 5; % [m]
 % ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
-ObjectiveWeights = [1 1e-08/N 1e-06/N];
+ObjectiveWeights = [1 1e-06 1];
+% ObjectiveWeights = [1 1e-10/N 1e-08/N];
+% ObjectiveWeights = [100 1e-10/N 1e-08/N];
 % ObjectiveWeights = [1 1e-02 1e-01];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
@@ -55,11 +57,13 @@ problem.options = optimoptions("fmincon",...
 
 if ~USE_NMPC || NLP_AND_NMPC
     if NLP_PLANNING
+        last_pos_ode = recievers_pos_ode(:,[1 2 4 5]);
         if CODE_GENERATED_NLP
             NLPOnline_mex; % solve NLP from c generated code;
         else
             NLPOnline; % solve NLP
         end
+        
     else
         if EXPLORATION_TYPE == "R"
             L_t = 0.75*hl_length; % for radial exploration
@@ -83,6 +87,9 @@ if ~USE_NMPC || NLP_AND_NMPC
         end
     end
 end
+
+% ObjectiveWeights = [1 1e-6/N 1e-02];
+ObjectiveWeights = [1 1e-10/N 1e-08/N];
 
 % event-triggered replanning thresholds
 t_replanning = 10; % replanning timer [s]
@@ -112,7 +119,7 @@ OI_VAL = [my_temp];
 
 % estimate variation
 TRANSMITTER_ESTIMATE_VARIATION = [0];
-ESTIMATE_VARIATION_THRESHOLD = 5e-04;
+ESTIMATE_VARIATION_THRESHOLD = 1e-04;
 
 % estimate error
 TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
@@ -121,8 +128,8 @@ TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat
 if COMPUTING_DEVICE_DELAY
     NOMINAL_TRANSMISSION_DISTANCE = 50; % [m] is the distance between any UAV and the estimation device such that the nominal transmission time is the sample time
     medium_velocity = NOMINAL_TRANSMISSION_DISTANCE/TIME_STEP; % [m/s]
-    uncertain_time_range = 100*TIME_STEP; % [s]
-    estimation_device_pos = [0 -20 0];
+    uncertain_time_range = 40*TIME_STEP; % [s]
+    estimation_device_pos = [0 -35 0];
     AS = Dispatcher(N,TIME_STEP,recievers_pos_ode,NaN,NaN);
 end
 
@@ -224,39 +231,47 @@ end
 
 % hide targets
 for i = 1:N
-    sim.setObjectInt32Param(UAV_handels{i,2},sim.objintparam_visibility_layer,0)
+    sim.setObjectInt32Param(UAV_handels{i,2},sim.objintparam_visibility_layer,0);
 end
 
 % %show targets
 % for i = 1:N
-%     sim.setObjectInt32Param(UAV_handels{i,2},sim.objintparam_visibility_layer,1)
+%     sim.setObjectInt32Param(UAV_handels{i,2},sim.objintparam_visibility_layer,1);
 % end
 
 % show planner device position
 PlannerDevice = sim.getObject("./Planner");
+CPSIM_node_graph = sim.getObject("./NodeGraph");
 if exist("estimation_device_pos","var")
+    
+    % set PlannerDevice position
     sim.setObjectInt32Param(PlannerDevice,sim.objintparam_visibility_layer,1);
     temp_cell = cell(1,3);
     for j = 1:3; temp_cell{j} = estimation_device_pos(j); end
     temp_cell{3} = 0.5;
     sim.setObjectPosition(PlannerDevice,temp_cell);
+    
+    % set nodegraph position
+    sim.setObjectInt32Param(CPSIM_node_graph,sim.objintparam_visibility_layer,1);
+    temp_cell = cell(1,3);
+    for j = 1:3; temp_cell{j} = estimation_device_pos(j); end
+    temp_cell{3} = 1;
+    sim.setObjectPosition(CPSIM_node_graph,temp_cell);
 else
     sim.setObjectInt32Param(PlannerDevice,sim.objintparam_visibility_layer,0);
+    sim.setObjectInt32Param(CPSIM_node_graph,sim.objintparam_visibility_layer,0);
 end
 
 
 % show centralized estimated position
 CPSIM_estimated_position = sim.getObject("./EstimatedPos");
+CPSIM_estimated_position_z = sim.getObject("./EstimatedPosz");
 for j = 1:3; temp_cell{j} = transmitter_pos_hat(j); end
 temp_cell{3} = 0.05;
 sim.setObjectPosition(CPSIM_estimated_position,temp_cell);
+temp_cell{3} = transmitter_pos_hat(3);
+sim.setObjectPosition(CPSIM_estimated_position_z,temp_cell);
 
-% set nodegraph position
-CPSIM_node_graph = sim.getObject("./NodeGraph");
-temp_cell = cell(1,3);
-for j = 1:3; temp_cell{j} = estimation_device_pos(j); end
-temp_cell{3} = 1;
-sim.setObjectPosition(CPSIM_node_graph,temp_cell);
 
 % initial inputs (gravity compensation to hover)
 for i=1:N
@@ -272,6 +287,24 @@ sim.startSimulation();
 %% MAINLOOP EXECUTION
 
 BROADCAST_COUNT_DOWN = -1;
+DISPATCH_TRAJECTORY_COUNTER = -1*ones(N,2);
+DISPATCH_STOP_COUNTER = -1*ones(N,1);
+PLANNING_PHASE_COUNTER = -1;
+
+% start video recording
+if RECORD_VIDEO
+    this_time = string(datetime('now'));
+    vid_name = "MV-"+this_time;
+    vid_name = regexprep(vid_name," ",":");
+    vid_name = regexprep(vid_name,":","-");
+    writerObj = VideoWriter(vid_name,'Motion JPEG AVI');
+    % set the seconds per image
+    approx_magnitude = 1;
+    writerObj.FrameRate = 1/TIME_STEP;
+    writerObj.Quality = 85;
+    % open the writer
+    open(writerObj);
+end
 
 STEP = 1;
 K_STEP = 2;
@@ -298,44 +331,136 @@ while t_simulation(STEP) < t_simulation(end)
     INTER_DISTANCES = [INTER_DISTANCES;zeros(1,NUM_DIST)];
     VELOCITIES = [VELOCITIES;zeros(1,N)];
 
-    % event-triggered replanning
-    if  (NLP_PLANNING || DOUBLE_PHASE || NLP_AND_NMPC) && t_replanning <= 0
-        ESTIMATE_ERROR = norm(transmitter_pos_hat-last_replanning_transmitter_pos_hat);
-        OPI = OI_function(recievers_pos_ode_history(1:STEP,:,1:2));
-        if  ESTIMATE_ERROR > RHO_THRESHOLD || ...
-            OPI <= SIGMA_TRESHOLD
+    
+    % event-triggered replanning (sync case)
+    if ~COMPUTING_DEVICE_DELAY
+
+        if  (NLP_PLANNING || DOUBLE_PHASE || NLP_AND_NMPC) && t_replanning <= 0
+            ESTIMATE_ERROR = norm(transmitter_pos_hat-last_replanning_transmitter_pos_hat);
+            OPI = OI_function(recievers_pos_ode_history(1:STEP,:,1:2));
+            if  ESTIMATE_ERROR > RHO_THRESHOLD || ...
+                OPI <= SIGMA_TRESHOLD
+                last_replanning_transmitter_pos_hat = transmitter_pos_hat;
+                K_STEP = 2; % reset steps
+    
+                last_pos_ode = recievers_pos_ode(:,[1 2 4 5]);
+    
+                if CODE_GENERATED_NLP
+                    NLPOnline_mex; % solve NLP from c generated code;
+                else
+                    NLPOnline; % solve NLP
+                end
+                
+                % broadcast new trajectories
+                if NLP_AND_NMPC
+                    for i = 1:UAV_NET.NUM_UAVS
+                        UAV_NET.UAVS{i}.trajectory_ref = squeeze(UAV_trajs(i,:,:));
+                        UAV_NET.UAVS{i}.trajectory_step = 1;
+                    end
+                end
+    
+                % show computed trajs
+                plotComputedTrajs;
+    %             % plot new estimated mission endtime
+                set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
+                drawnow;
+            end
+            t_replanning = 10; % reset timer
+        end
+
+    end
+
+    % event-triggered replanning (async case)
+    if COMPUTING_DEVICE_DELAY
+
+        if PLANNING_PHASE_COUNTER == -1
+            if  (NLP_PLANNING || DOUBLE_PHASE || NLP_AND_NMPC) && t_replanning <= 0
+    
+                ESTIMATE_ERROR = norm(transmitter_pos_hat-last_replanning_transmitter_pos_hat);
+                OPI = OI_function(recievers_pos_ode_history(1:STEP,:,1:2));
+                
+                if  ESTIMATE_ERROR > RHO_THRESHOLD || OPI <= SIGMA_TRESHOLD
+                    
+                    % communicate UAV to stop
+                    for i = 1:N
+                        random_alpha = rand(1,1);
+                        delta_spawn_time = ( norm(recievers_pos(i,1:3) - estimation_device_pos(1:3))/medium_velocity ) + random_alpha * uncertain_time_range;
+                        DISPATCH_STOP_COUNTER(i) = fix(delta_spawn_time/TIME_STEP)+2;
+                    end
+                    
+                    % to be sure that the trajectories will be near
+                    % obstacles
+                    PLANNING_PHASE_COUNTER = fix((3*uncertain_time_range)/TIME_STEP)+1;
+        
+                end
+                t_replanning = 10; % reset timer
+            end
+        elseif PLANNING_PHASE_COUNTER > 0
+            PLANNING_PHASE_COUNTER = PLANNING_PHASE_COUNTER - 1;
+        elseif PLANNING_PHASE_COUNTER == 0
             last_replanning_transmitter_pos_hat = transmitter_pos_hat;
             K_STEP = 2; % reset steps
+    
+            last_pos_ode = [available_pos_ode(:,1:2) zeros(size(last_pos_ode,1),2)];
+    
+            % compute new trajectoryes
             if CODE_GENERATED_NLP
                 NLPOnline_mex; % solve NLP from c generated code;
             else
                 NLPOnline; % solve NLP
             end
-            BROADCAST_COUNT_DOWN = fix(CPU_TIME/TIME_STEP)+1;
-%             if NLP_AND_NMPC
-%                 for i = 1:UAV_NET.NUM_UAVS
-%                     UAV_NET.UAVS{i}.trajectory_ref = squeeze(UAV_trajs(i,:,:));
-%                     UAV_NET.UAVS{i}.trajectory_step = 1;
-%                 end
-%             end
-%             % show computed trajs
+    
+            % prepare broadcast
+            BROADCAST_COUNT_DOWN = 0; % set to 0 then we are neglecting computational time
+    
+            % show computed trajs
             plotComputedTrajs;
-%             % plot new estimated mission endtime
+    %             % plot new estimated mission endtime
             set(VIZ_END_MISSION_TIME,"String","Estimated endtime: "+string(t_simulation(STEP)+t_f)+" s");
+            drawnow;
+            t_replanning = 10; % reset replanning
+            PLANNING_PHASE_COUNTER = -1;
         end
-        t_replanning = 10; % reset timer
-    end
 
-    % actual broadcast after cpu-time
-    if BROADCAST_COUNT_DOWN > 0; BROADCAST_COUNT_DOWN = BROADCAST_COUNT_DOWN - 1;
-    elseif BROADCAST_COUNT_DOWN == 0
-        if NLP_AND_NMPC
-            for i = 1:UAV_NET.NUM_UAVS
-                UAV_NET.UAVS{i}.trajectory_ref = squeeze(UAV_trajs(i,:,:));
-                UAV_NET.UAVS{i}.trajectory_step = fix(CPU_TIME/TIME_STEP)+1;
+        % handle stop signal arrival to UAVS
+        if any(DISPATCH_STOP_COUNTER(:) >= 0)
+            for j=1:N
+                if DISPATCH_STOP_COUNTER(j) == 0
+                    UAV_NET.stop_ith_UAV(j);
+                    DISPATCH_STOP_COUNTER(j) = DISPATCH_STOP_COUNTER(j) - 1;
+                elseif DISPATCH_STOP_COUNTER(j,1) > 0
+                    DISPATCH_STOP_COUNTER(j) = DISPATCH_STOP_COUNTER(j) - 1;
+                end
             end
         end
-        BROADCAST_COUNT_DOWN = -1;
+        
+        % actual broadcast after cpu-time
+        if BROADCAST_COUNT_DOWN > 0; BROADCAST_COUNT_DOWN = BROADCAST_COUNT_DOWN - 1;
+        elseif BROADCAST_COUNT_DOWN == 0
+            for i = 1:N
+                random_alpha = rand(1,1);
+                delta_spawn_time = ( norm(recievers_pos(i,1:3) - estimation_device_pos(1:3))/medium_velocity ) + random_alpha * uncertain_time_range;
+                DISPATCH_TRAJECTORY_COUNTER(i,1) = fix(delta_spawn_time/TIME_STEP)+2;
+                DISPATCH_TRAJECTORY_COUNTER(i,2) = delta_spawn_time;
+            end
+            BROADCAST_COUNT_DOWN = -1;
+        end
+    
+        % handle trajectory arrival to UAVS
+        if any(DISPATCH_TRAJECTORY_COUNTER(:,1) >= 0)
+            for j=1:N
+                if DISPATCH_TRAJECTORY_COUNTER(j,1) == 0
+                    UAV_NET.UAVS{j}.trajectory_ref = squeeze(UAV_trajs(j,:,:));
+    %                 UAV_NET.UAVS{j}.trajectory_step = fix((CPU_TIME+DISPATCH_TRAJECTORY_COUNTER(j,2))/TIME_STEP)+1;
+                    UAV_NET.UAVS{j}.trajectory_step = 1;
+                    DISPATCH_TRAJECTORY_COUNTER(j,1) = DISPATCH_TRAJECTORY_COUNTER(j,1) - 1;
+                    DISPATCH_TRAJECTORY_COUNTER(j,2) = 0; 
+                elseif DISPATCH_TRAJECTORY_COUNTER(j,1) > 0
+                    DISPATCH_TRAJECTORY_COUNTER(j,1) = DISPATCH_TRAJECTORY_COUNTER(j,1) - 1;
+                end
+            end
+        end
+
     end
     
     % async case preliminarities
@@ -368,35 +493,27 @@ while t_simulation(STEP) < t_simulation(end)
     old_transmitter_pos_hat = transmitter_pos_hat;
     transmitter_pos_hat = (inv(M_hat)*X_hat(7:9).').'; % new transmitter estimate
 
-
+    
+    UAV_NET.refresh_nmpc_state(recievers_pos_ode,false);
     if ~USE_NMPC
-        UAV_NET.refresh_nmpc_state(recievers_pos_ode,false);
         % set current reference point for UAVS
-%         reshape(squeeze(UAV_trajs(:,K_STEP,:)).',1,[]).'
-%         repmat([transmitter_pos_hat(1:2) 0 0 0],1,N).'
-        temp_dim = size(UAV_trajs);
-        if K_STEP > temp_dim(2) % if trajs have ended stay at the end
-            curr_traj = squeeze(UAV_trajs(:,end,:));
-            curr_traj(:,3:4) = zeros(N,2);
-%             UAV_references = reshape(curr_traj.',1,[]).';
-            UAV_references = curr_traj;
-        else
-%             UAV_references = reshape(squeeze(UAV_trajs(:,K_STEP,:)).',1,[]).';
-            UAV_references = squeeze(UAV_trajs(:,K_STEP,:));
-        end
+%         temp_dim = size(UAV_trajs);
+%         if K_STEP > temp_dim(2) % if trajs have ended stay at the end
+%             curr_traj = squeeze(UAV_trajs(:,end,:));
+%             curr_traj(:,3:4) = zeros(N,2);
+%             UAV_references = curr_traj;
+%         else
+%             UAV_references = squeeze(UAV_trajs(:,K_STEP,:));
+%         end
 %         temp_refs = [1.25 0 0 0;3.75 0 0 0;6.25 0 0 0;8.75 0 0 0];
-        U_FL = UAV_NET.FL_UAV_TEAM_step(UAV_references);
+        U_FL = UAV_NET.FL_UAV_TEAM_step();
         for i = 1:N
             control_UAV(sim,UAV_propellers_list{i},U_FL(i,:));
         end
     else
         U_NMPC = UAV_NET.NMPC_UAV_TEAM_step();
         for i = 1:N
-            try
-                control_UAV(sim,UAV_propellers_list{i},U_NMPC(i,:));
-            catch
-                fprintf("Ill conditioned solver\n");
-            end
+            control_UAV(sim,UAV_propellers_list{i},U_NMPC(i,:));
 %             control_UAV(sim,UAV_propellers_list{i},[1.2753,1.2753,1.2753,1.2753]);
         end
     end
@@ -415,6 +532,8 @@ while t_simulation(STEP) < t_simulation(end)
         for j = 1:3; temp_cell{j} = transmitter_pos_hat(j); end
         temp_cell{3} = 0.05;
         sim.setObjectPosition(CPSIM_estimated_position,temp_cell);
+        temp_cell{3} = transmitter_pos_hat(3);
+        sim.setObjectPosition(CPSIM_estimated_position_z,temp_cell);
     end
     recievers_pos = recievers_pos_ode(:,1:3);
 
@@ -476,21 +595,23 @@ while t_simulation(STEP) < t_simulation(end)
     end
     TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [TRANSMITTER_ESTIMATE_DRLS_DEVIATION;NETWORK_ESTIMATES_DEV];
 
-    if USE_NMPC
-        if ~COMPUTING_DEVICE_DELAY
-            % refresh online data for nmpc
-            UAV_NET.refresh_nmpc_state(recievers_pos_ode,false);
-        else
-            UAV_NET.refresh_nmpc_state(recievers_pos_ode,true);
-        end
-    end
-
-%     % visualize step
-%     pause(TIME_STEP);
+    % visualize step
     visualize_update;
+
 end
 
 sim.stopSimulation();
+
+hold off;
+
+% stop and save video recorded
+if RECORD_VIDEO
+    if ~exist('./Movies', 'dir')
+           mkdir('./Movies');
+    end
+    close(writerObj);
+    movefile(vid_name+".avi",'./Movies/.');
+end
 
 %% PLOTS
 
@@ -534,6 +655,11 @@ for i = 1:N
     plot(t_simulation(1:STEP),VELOCITIES(1:STEP,i),"LineWidth",2.0,"Color",color_list(i));
 end
 plot(t_simulation(1:STEP),repmat(v_max,STEP,1),"--","Color","Black","LineWidth",1.5);
+lgnd = cell(1,N);
+for i = 1:N
+    lgnd{i} = "UAV "+num2str(i);
+end
+legend(lgnd,"Location","Best");
 hold off;
 saveas(fig3,'./tmp_dir/VELS.png');
 saveas(fig3,'./tmp_dir/VELS.fig');
@@ -545,7 +671,7 @@ grid on; hold on;
 title("Observability index");
 xlabel("time [s]");
 xlim([0 TIME_STEP*STEP]);
-plot(t_simulation(1:STEP),OI_VAL,"Color","Black","LineWidth",1.5);
+plot(t_simulation(1:STEP),OI_VAL,"Color","Black","LineWidth",2.0);
 plot(t_simulation(1:STEP),repmat(SIGMA_TRESHOLD,STEP,1),"--","Color","Black","LineWidth",1.5);
 hold off;
 save SIGMA_TRESHOLD.mat SIGMA_TRESHOLD;
@@ -560,7 +686,7 @@ title("Transmitter position estimate variation")
 xlabel("time [s]");
 ylabel("[m]");
 xlim([0 TIME_STEP*STEP]);
-plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_VARIATION,"Color","Black","LineWidth",1.5);
+plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_VARIATION,"Color","Black","LineWidth",2.0);
 hold off;
 saveas(fig5,'./tmp_dir/TEV.png');
 saveas(fig5,'./tmp_dir/TEV.fig');
@@ -575,7 +701,7 @@ xlabel("time [s]");
 ylabel("[m]");
 xlim([0 TIME_STEP*STEP]);
 ylim([0 5]);
-plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_ERROR,"Color","Black","LineWidth",1.5);
+plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_ERROR,"Color","Black","LineWidth",2.0);
 hold off;
 if COMPUTING_DEVICE_DELAY
     save TRANSMITTER_ESTIMATE_ERROR.mat TRANSMITTER_ESTIMATE_ERROR;
@@ -595,7 +721,7 @@ ylabel("[m]");
 xlim([0 TIME_STEP*STEP]);
 ylim([0 5]);
 for i = 1 : N
-    plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_DRLS_DEVIATION(:,i).',"Color",color_list(i),"LineWidth",1.5);
+    plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_DRLS_DEVIATION(:,i).',"Color",color_list(i),"LineWidth",2.0);
 end
 hold off;
 saveas(fig7,'./tmp_dir/DRLS_deviation.png');
@@ -611,13 +737,13 @@ if USE_NMPC
     xlim([0 TIME_STEP*STEP]);
     ylim([0 2*TIME_STEP]);
     for i = 1 : N
-        plot(t_simulation(1:STEP-1),UAV_NET.UAVS{i}.CPU_TIME(1:STEP-1),"Color",color_list(i),"LineWidth",1.5);
+        plot(t_simulation(1:STEP-1),UAV_NET.UAVS{i}.CPU_TIME(1:STEP-1),"Color",color_list(i),"LineWidth",2.0);
         
     end
     plot(t_simulation(1:STEP-1),repmat(Drone_NMPC.Ts,STEP-1,1),"--","Color","black","LineWidth",1.5);
     lgnd = cell(1,N+1);
     for i = 1 :N
-        lgnd{i} = "CPU TIME UAV "+num2str(i);
+        lgnd{i} = "UAV "+num2str(i);
     end
     lgnd{i+1} = "MAX CPU TIME";
     legend(lgnd);
@@ -662,7 +788,7 @@ function UAV_state = getState(sim,UAV)
         w_mat(i) = double(w{i});
     end
     w_mat = (R.' * w_mat.').';
-    UAV_state = [x dx_mat w_mat rpy];
+    UAV_state = double([x dx_mat w_mat rpy]);
 end
 
 function control_UAV(sim,UAV_propeller_list,controls)
