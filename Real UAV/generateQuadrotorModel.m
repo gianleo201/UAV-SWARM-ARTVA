@@ -1,6 +1,6 @@
 ENABLE_FUNCTION_GENERATION = false;
 RPY_FIXED_AXIS = true;
-CHANGE_OF_INPUT = false;
+CHANGE_OF_INPUT = true;
 
 %% symbolic dynamic parameters
 
@@ -97,10 +97,24 @@ rot_motion = simplify(inv(J)*(tau_r-wxJw)); % ode angular velocities
 
 %% kinematic equations (d_(roll,pitch,yaw)_dt <- w)
 
+% geometric way
 temp = simplify(tRz*tRy);
-om_inv = [temp(:,1) tRz(:,2) [0;0;1]]; % fro PHI_dot to w
+om_inv = [temp(:,1) tRz(:,2) [0;0;1]]; % from PHI_dot to w
 clear temp;
 om = simplify(inv(om_inv)*R_fr*w); % om = [phi_dot;theta_dot;psi_dot] 
+
+
+% % analytical way
+% R_dot = sym(zeros(3,3));
+% syms phi_dot theta_dot psi_dot real;
+% for i = 1:3
+%     for j=1:3
+%         R_dot(i,j) = jacobian(R_fr(i,j),[phi;theta;psi])*[phi_dot theta_dot psi_dot].';
+%     end
+% end
+% SW = simplify(R_fr.' * R_dot);
+% pqr = [SW(3,2) SW(1,3) SW(2,1)];
+% om = inv(jacobian(pqr,[phi_dot theta_dot psi_dot]))*w;
 
 %% compute total model
 
@@ -215,6 +229,21 @@ if ~CHANGE_OF_INPUT
     h_f = simplify(norm([x;y;z]-p_obs) - d_dist);
     h_f_dot = simplify(jacobian(h_f,sym_model_state)*quadrotor_model + jacobian(h_f,p_obs)*p_obs_dot);
     h_f_ddot = simplify(jacobian(h_f_dot,sym_model_state)*quadrotor_model + jacobian(h_f_dot,[p_obs;p_obs_dot])*[p_obs_dot;p_obs_ddot]);
+end
+
+
+%% build 1st order modified CBF
+
+if ~CHANGE_OF_INPUT
+    syms x_obs y_obs z_obs x_obs_dot y_obs_dot z_obs_dot d_dist mu real;
+    
+    p_obs = [x_obs y_obs z_obs].';
+    p_obs_dot = [x_obs_dot y_obs_dot z_obs_dot].';
+
+    h_f_mod = simplify(([x y z].'-p_obs).' *([x y z].'-p_obs) + mu * [dx dy dz] * ([x;y;z]-p_obs) - d_dist^2);
+    
+    % here the control input appears
+    h_f_mod_dot = simplify(jacobian(h_f_mod,sym_model_state)*quadrotor_model+jacobian(h_f_mod,p_obs)*p_obs_dot);
 end
 
 %% generate functions

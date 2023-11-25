@@ -505,8 +505,10 @@ while t_simulation(STEP) < t_simulation(end)
 %         else
 %             UAV_references = squeeze(UAV_trajs(:,K_STEP,:));
 %         end
-%         temp_refs = [1.25 0 0 0;3.75 0 0 0;6.25 0 0 0;8.75 0 0 0];
-        U_FL = UAV_NET.FL_UAV_TEAM_step();
+        % feedback linearization step
+%         U_FL = UAV_NET.FL_UAV_TEAM_step();
+        % hierarcical control step
+        U_FL = UAV_NET.HC_UAV_TEAM_step();
         for i = 1:N
             control_UAV(sim,UAV_propellers_list{i},U_FL(i,:));
         end
@@ -514,7 +516,6 @@ while t_simulation(STEP) < t_simulation(end)
         U_NMPC = UAV_NET.NMPC_UAV_TEAM_step();
         for i = 1:N
             control_UAV(sim,UAV_propellers_list{i},U_NMPC(i,:));
-%             control_UAV(sim,UAV_propellers_list{i},[1.2753,1.2753,1.2753,1.2753]);
         end
     end
 
@@ -536,6 +537,7 @@ while t_simulation(STEP) < t_simulation(end)
         sim.setObjectPosition(CPSIM_estimated_position_z,temp_cell);
     end
     recievers_pos = recievers_pos_ode(:,1:3);
+    UAV_NET.refresh_nmpc_state(recievers_pos_ode,false);
 
     % next step
     STEP = STEP + 1;
@@ -772,15 +774,13 @@ function UAV_state = getState(sim,UAV)
     R(3,2) = double(T_temp{10});
     R(3,3) = double(T_temp{11});
     
-%     rpy = rotm2eul(R,'ZYX');
-%     rpy = rpy(end:-1:1);
-
     abg_cpsim = sim.getObjectOrientation(UAV,sim.handle_world);
     [yaw,pitch,roll] = sim.alphaBetaGammaToYawPitchRoll(abg_cpsim{1},abg_cpsim{2},abg_cpsim{3});
     rpy = [roll pitch yaw];
 
-    [dx,w] = sim.getObjectVelocity(UAV+sim.handleflag_axis,sim.handle_world);
+%     [dx,w] = sim.getObjectVelocity(UAV+sim.handleflag_axis,sim.handle_world);    
 %     [dx_no_flag,w_no_flag] = sim.getObjectVelocity(UAV,sim.handle_world);
+    [dx,w] = sim.getObjectVelocity(UAV + sim.handleflag_axis);
     dx_mat = zeros(1,3);
     w_mat = zeros(1,3);
     for i = 1:3

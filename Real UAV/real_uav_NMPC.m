@@ -14,9 +14,9 @@ Drone_NMPC.Ts = 0.05;
 Drone_NMPC.PredictionHorizon = 8;
 Drone_NMPC.ControlHorizon = 8;
 
-% ACADO 
-Drone_NMPC.PredictionHorizon = 30;
-Drone_NMPC.ControlHorizon = 30;
+% overwrite with ACADO params
+Drone_NMPC.PredictionHorizon = 20;
+Drone_NMPC.ControlHorizon = 20;
 
 Drone_NMPC.Model.NumberOfParameters = 7;
 % Drone_NMPC.Optimization.CustomCostFcn = "quadrotor_ObjFunction";
