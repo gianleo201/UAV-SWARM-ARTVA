@@ -5,9 +5,9 @@ close all;
 
 NLP_PLANNING = true;
 DOUBLE_PHASE = false;
-RECORD_VIDEO = false;
+RECORD_VIDEO = true;
 COMPUTING_DEVICE_DELAY = true;
-USE_NMPC = false;
+USE_NMPC = true;
 EXPLORATION_TYPE = "V";  %% select one in the following string list ["V","H","R"]
 CODE_GENERATED_NLP = true;
 NLP_AND_NMPC = true;

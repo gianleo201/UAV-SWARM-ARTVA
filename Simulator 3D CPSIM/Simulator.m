@@ -496,23 +496,15 @@ while t_simulation(STEP) < t_simulation(end)
     
     UAV_NET.refresh_nmpc_state(recievers_pos_ode,false);
     if ~USE_NMPC
-        % set current reference point for UAVS
-%         temp_dim = size(UAV_trajs);
-%         if K_STEP > temp_dim(2) % if trajs have ended stay at the end
-%             curr_traj = squeeze(UAV_trajs(:,end,:));
-%             curr_traj(:,3:4) = zeros(N,2);
-%             UAV_references = curr_traj;
-%         else
-%             UAV_references = squeeze(UAV_trajs(:,K_STEP,:));
-%         end
         % feedback linearization step
-%         U_FL = UAV_NET.FL_UAV_TEAM_step();
+        U_FL = UAV_NET.FL_UAV_TEAM_step();
         % hierarcical control step
-        U_FL = UAV_NET.HC_UAV_TEAM_step();
+%         U_FL = UAV_NET.HC_UAV_TEAM_step();
         for i = 1:N
             control_UAV(sim,UAV_propellers_list{i},U_FL(i,:));
         end
     else
+        % NMPC step
         U_NMPC = UAV_NET.NMPC_UAV_TEAM_step();
         for i = 1:N
             control_UAV(sim,UAV_propellers_list{i},U_NMPC(i,:));
