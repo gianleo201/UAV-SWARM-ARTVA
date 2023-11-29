@@ -187,37 +187,38 @@ classdef UAVNetwork < handle
                 obj.UAVS{i}.gravity_compensation = model_params(6)*model_params(7)/4;
                 obj.UAVS{i}.ACADO_input = struct;
 
-%                 obj.UAVS{i}.ACADO_input.u = zeros(NMPC_handle.PredictionHorizon,4);
-%                 obj.UAVS{i}.ACADO_input.x = repmat(X0,NMPC_handle.PredictionHorizon+1,1);
-
-                % consider also input rate
                 obj.UAVS{i}.ACADO_input.u = zeros(NMPC_handle.PredictionHorizon,4);
-                obj.UAVS{i}.ACADO_input.x = repmat([X0 obj.UAVS{i}.gravity_compensation*ones(1,4)],NMPC_handle.PredictionHorizon+1,1);
+                obj.UAVS{i}.ACADO_input.x = repmat(X0,NMPC_handle.PredictionHorizon+1,1);
+
+%                 % consider also input rate
+%                 obj.UAVS{i}.ACADO_input.u = zeros(NMPC_handle.PredictionHorizon,4);
+%                 obj.UAVS{i}.ACADO_input.x = repmat([X0 obj.UAVS{i}.gravity_compensation*ones(1,4)],NMPC_handle.PredictionHorizon+1,1);
                 
-                Wdu = 0.0001;
-                Wu = 1000;
+%                 Wdu = 0.001;
+%                 Wu = 1000;
+%                 Wx = 20;
+%                 Wz = 30;
+%                 Wdx = 10;
+%                 W_phi_theta = 1;
+% %                 W_phi_theta = 1;
+%                 W_psi = 30;
+%                 W_pqr = 0.1;
+
+%                 Wu = 1000; % when simulated in coppelia
+                Wu = 100;
                 Wx = 20;
                 Wz = 30;
-                Wdx = 10;
-                W_phi_theta = 1;
-%                 W_phi_theta = 1;
+                Wdx = 5;
+                W_phi_theta = 0.5;
                 W_psi = 30;
                 W_pqr = 0.1;
 
-%                 Wu = 1000;
-%                 Wx = 50;
-%                 Wz = 100;
-%                 Wdx = 5;
-%                 W_phi_theta = 1;
-%                 W_psi = 50;
-%                 W_pqr = 1;
-
-%                 obj.UAVS{i}.ACADO_input.W = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_pqr*ones(1,3) W_phi_theta*ones(1,2) W_psi Wu*ones(1,4)]);
-%                 obj.UAVS{i}.ACADO_input.WN = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_pqr*ones(1,3) W_phi_theta*ones(1,2) W_psi]);
+                obj.UAVS{i}.ACADO_input.W = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_pqr*ones(1,3) W_phi_theta*ones(1,2) W_psi Wu*ones(1,4)]);
+                obj.UAVS{i}.ACADO_input.WN = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_pqr*ones(1,3) W_phi_theta*ones(1,2) W_psi]);
 
                 % consider also input rate
-                obj.UAVS{i}.ACADO_input.W = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_pqr*ones(1,3) W_phi_theta*ones(1,2) W_psi Wu*ones(1,4) Wdu*ones(1,4)]);
-                obj.UAVS{i}.ACADO_input.WN = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_pqr*ones(1,3) W_phi_theta*ones(1,2) W_psi]);
+%                 obj.UAVS{i}.ACADO_input.W = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_pqr*ones(1,3) W_phi_theta*ones(1,2) W_psi Wu*ones(1,4) Wdu*ones(1,4)]);
+%                 obj.UAVS{i}.ACADO_input.WN = diag([Wx*ones(1,2) Wz Wdx*ones(1,3) W_pqr*ones(1,3) W_phi_theta*ones(1,2) W_psi]);
                 
 
                 % tune terminal cost with solution of Riccati equation
@@ -278,7 +279,9 @@ classdef UAVNetwork < handle
 
             %% initialize FL controller
             for i = 1:obj.NUM_UAVS
-                obj.UAVS{i}.FL_THRUST = sum([1.2753 1.2753 1.2753 1.2753]);
+                % total thrust
+                obj.UAVS{i}.FL_THRUST = sum([1.2753 1.2753 1.2753 1.2753]); % thrust needed to cancel gravity
+                % total thrust derivative
                 obj.UAVS{i}.FL_DTHRUST = 0;
             end
 
@@ -430,9 +433,14 @@ classdef UAVNetwork < handle
         %% Hierarcical controller step
         function Us = HC_UAV_TEAM_step(obj)
             Us = zeros(obj.NUM_UAVS,4);
-            kp = 0.4;
-            kd = 0.5;
-            mu = 1.4;
+%             kp = 0.4;
+%             kd = 0.5;
+%             mu = 1.4;
+            kp = 2.5;
+            kd = 4;
+            mu = 1.6;
+%             delta_1 = obj.d_safe * 1.5;
+            delta_1 = 1.5*obj.d_safe;
             for i = 1:obj.NUM_UAVS
 
                 % get current state
@@ -446,7 +454,6 @@ classdef UAVNetwork < handle
                 theta_dot = euler_dot(2);
                 psi_dot = euler_dot(3);
 
-
                 % get trajectory data
                 if obj.UAVS{i}.trajectory_step >= size(obj.UAVS{i}.trajectory_ref,1)
                     temp = [obj.UAVS{i}.trajectory_ref(end,1:2) 0 0];
@@ -455,15 +462,15 @@ classdef UAVNetwork < handle
                     obj.UAVS{i}.trajectory_step = obj.UAVS{i}.trajectory_step + 1;
                 end
                 cartesian_ref_k = [temp(1:2) 1.5 temp(3:4) 0]; % [x x_dot]
+%                 cartesian_ref_k = [x_k(1:3) zeros(1,3)];
 
                 % compute cartesian pd action
-%                 if obj.UAVS{i}.
                 non_neigh = obj.UAVS{i}.OD.Parameters{3};
                 p_obs = non_neigh(1,:);
                 num_non_neigh = obj.UAVS{i}.OD.Parameters{4};
                 u_cartesian_ref = kp * (cartesian_ref_k(1:3) - x_k(1:3)) + kd * (cartesian_ref_k(4:6) - x_k(4:6));
 
-                if num_non_neigh == 3
+                if num_non_neigh == 3 && norm(x_k(1:3)-p_obs) <= delta_1
                     % build projector and complementary projector
                     p = x_k(1:3);
                     p_dot = x_k(4:6);
@@ -472,14 +479,12 @@ classdef UAVNetwork < handle
                     % override control input by penilizing approaching the
                     % obstacle
                     u_cartesian_ref = ( (-2/mu) * PROJ * p_dot.' + C_PROJ * u_cartesian_ref.' ).';
-                elseif num_non_neigh == -1
+                elseif num_non_neigh == -1 || norm(x_k(1:3)-p_obs) > delta_1
                     u_cartesian_ref = u_cartesian_ref;
                 else
-                    fprintf("Not posible !!!! \n");
+                    fprintf("Not possible !!!! \n");
                 end
-                  
-
-
+                
                 m = obj.UAVS{i}.model_params(6);
                 g = obj.UAVS{i}.model_params(7);
                 Jxx = obj.UAVS{i}.model_params(3);
@@ -489,13 +494,12 @@ classdef UAVNetwork < handle
                 % compute thrust
                 T = m*(u_cartesian_ref(3)+g)/(cos(phi)*cos(theta));
 
-%                 theta_ref = atan((u_cartesian_ref(1)*cos(psi)+u_cartesian_ref(2)*sin(psi))/(u_cartesian_ref(3)+g));
-%                 phi_ref = atan(cos(theta_ref) * ((u_cartesian_ref(1)*sin(psi)-u_cartesian_ref(2)*cos(psi))/(u_cartesian_ref(3)+g)));
+                % compute roll-pitch angles
                 theta_ref = atan((u_cartesian_ref(1)*cos(psi)+u_cartesian_ref(2)*sin(psi))/(u_cartesian_ref(3)+g));
                 phi_ref = atan(cos(theta_ref) * ((u_cartesian_ref(1)*sin(psi)-u_cartesian_ref(2)*cos(psi))/(u_cartesian_ref(3)+g)));
                 
-                kp_attitude = 40;
-                kd_attitude = 10;
+                kp_attitude = 36;
+                kd_attitude = 12;
                 tau_phi = Jxx * ( kp_attitude*(phi_ref-phi) - kd_attitude*(phi_dot) );
                 tau_theta = Jyy * ( kp_attitude*(theta_ref-theta) - kd_attitude*(theta_dot) ) ;
                 tau_psi = Jzz * ( -kp_attitude*(psi) - kd_attitude*(psi_dot) );
@@ -505,6 +509,9 @@ classdef UAVNetwork < handle
 
                 % apply saturation function
                 for j = 1:4; if U(j)< 0; U(j)=0; else; if U(j) > 10; U(j) = 10; end; end; end
+
+                % revert input
+                U = (inv_input_mapping_matrix(obj.UAVS{i}.model_params) * U.' ).';
 
                 % save input
                 Us(i,:) = U;
@@ -516,7 +523,7 @@ classdef UAVNetwork < handle
         function Us = FL_UAV_TEAM_step(obj)
             Us = zeros(obj.NUM_UAVS,4);
             mu = 1.6;
-            q = 0.005;
+            q = 8;
             for i = 1:obj.NUM_UAVS
                 % do FL step
                 x_k_aug = [obj.UAVS{i}.X obj.UAVS{i}.FL_THRUST obj.UAVS{i}.FL_DTHRUST].';
@@ -542,14 +549,16 @@ classdef UAVNetwork < handle
                 curr_jerk = compute_pos_jerk(x_k_aug,obj.UAVS{i}.model_params).';
                 CRITIC_DIST_SQR = obj.d_safe^2 + obj.d_safe * mu * norm(q*x_k_aug(4:6).'+curr_jerk);
                 CRITIC_DIST = sqrt(CRITIC_DIST_SQR);
+                CRITIC_DIST = obj.d_safe*1.2;
                 if num_non_neigh == 3 && norm(x_k_aug(1:3).' - p_obs) <= CRITIC_DIST
                     T_mod = FL_step_CA(x_k_aug,ref_k,obj.UAVS{i}.model_params,p_obs,mu,q);
                 elseif num_non_neigh == -1 || norm(x_k_aug(1:3).' - p_obs) > CRITIC_DIST
                     T_mod = FL_step(x_k_aug,ref_k,obj.UAVS{i}.model_params);
                 else
-                    fprintf("Not posible !!!! \n");
+                    fprintf("Not possible !!!! \n");
                 end
 
+%                 % DEBUG: override eventually collision avoidance mods
 %                 T_mod = FL_step(x_k_aug,ref_k,obj.UAVS{i}.model_params);
                 
                 % compute real input
@@ -558,9 +567,12 @@ classdef UAVNetwork < handle
                 % apply saturation function
                 for j = 1:4; if U(j)< 0; U(j)=0; else; if U(j) > 10; U(j) = 10; end; end; end
 
+                % revert input
+                U = (inv_input_mapping_matrix(obj.UAVS{i}.model_params) * U.' ).';
+
                 % update controller state
-%                 obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
-                obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP+ 0.5*T_mod(1)*obj.TIME_STEP.^2;
+                obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
+%                 obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP+ 0.5*T_mod(1)*obj.TIME_STEP.^2;
                 obj.UAVS{i}.FL_DTHRUST = obj.UAVS{i}.FL_DTHRUST + T_mod(1)*obj.TIME_STEP;
 %                 obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
                 
@@ -617,8 +629,8 @@ classdef UAVNetwork < handle
 
                     % define patrolling height
                     curr_z = obj.UAVS{i}.X(3);
-%                     z_ref = 3;
-                    z_ref = 3+(i-1)*1.5;
+                    z_ref = 1.5;
+%                     z_ref = i*1.5;
                     z_refs = zeros(l,1);
                     z_refs(1) = curr_z;
                     lambda = 0.8;
@@ -627,11 +639,11 @@ classdef UAVNetwork < handle
                     end
                     
                     % assign initial state and define input reference
-%                     obj.UAVS{i}.ACADO_input.x0 = obj.UAVS{i}.X;
-%                      u_ref = zeros(obj.NMPC_handle.PredictionHorizon,4);
-                    % consider also input rate
-                    obj.UAVS{i}.ACADO_input.x0 = [obj.UAVS{i}.X obj.UAVS{i}.ACADO_input.x(1,end-3:end)];
-                    u_ref = zeros(obj.NMPC_handle.PredictionHorizon,8);
+                    obj.UAVS{i}.ACADO_input.x0 = obj.UAVS{i}.X;
+                    u_ref = zeros(obj.NMPC_handle.PredictionHorizon,4);
+%                     % consider also input rate
+%                     obj.UAVS{i}.ACADO_input.x0 = [obj.UAVS{i}.X obj.UAVS{i}.ACADO_input.x(1,end-3:end)];
+%                     u_ref = zeros(obj.NMPC_handle.PredictionHorizon,8);
                     
 
                     if CAN_GO_ON % standard trajectory computing
@@ -658,6 +670,7 @@ classdef UAVNetwork < handle
                         y_ref_recovery(k,:) = (1-lambda) * y_ref_recovery(k-1,:) + lambda * dest;
                         
                     end
+                    obj.UAVS{i}.OD.ref = y_ref_recovery;
                     obj.UAVS{i}.ACADO_input.y = [y_ref_recovery u_ref];
                     obj.UAVS{i}.ACADO_input.yN = obj.UAVS{i}.OD.ref(end,:);
 
@@ -688,33 +701,6 @@ classdef UAVNetwork < handle
                 end
 
                 %% NMPC step
-               
-%                 tic;
-%                 [nmpc_mv, new_OD, info] = NMPC_STEP(obj.NMPC_handle, ...
-%                                                     obj.UAVS{i}.X.', ...
-%                                                     obj.UAVS{i}.U.', ...
-%                                                     obj.UAVS{i}.OD, ...
-%                                                     true);
-%                 elapsed_time = toc;
-% 
-%                 % register cpu time
-%                 obj.UAVS{i}.CPU_TIME = [obj.UAVS{i}.CPU_TIME elapsed_time];
-% 
-%                 % check nlmpc step status
-%                 nmpc_status = info.ExitFlag;
-%                 if nmpc_status < 0
-%                     fprintf("No feasable solution found for drone %d\n",i);
-%                     fprintf("Exit flag number: %d\n",nmpc_status);
-%                     if ~obj.THREE_DIMENSIONAL
-%                         obj.UAVS{i}.U = - obj.UAVS{i}.X(3:4); % stop the UAV
-%                     else
-% %                         obj.UAVS{i}.U = - obj.UAVS{i}.X(4:6); % stop the UAV
-%                         obj.UAVS{i}.U = nmpc_mv.';
-%                     end
-%                 else
-%                     obj.UAVS{i}.U = nmpc_mv.';
-%                 end
-%                     obj.UAVS{i}.OD = new_OD;
                     
                 % ACADO
                 out = acado_MPCstep(obj.UAVS{i}.ACADO_input);
@@ -723,9 +709,13 @@ classdef UAVNetwork < handle
                 % shift initial guesses
                 obj.UAVS{i}.ACADO_input.x = [out.x(2:end,:);out.x(end,:)];
                 obj.UAVS{i}.ACADO_input.u = [out.u(2:end,:);out.u(end,:)];
-%                 nmpc_mv = out.u(1,:).';
+                nmpc_mv = out.u(1,:).';
                 % consider also input rate
-                nmpc_mv = out.x(1,end-3:end).';
+%                 nmpc_mv = out.x(1,end-3:end).';
+                
+                %input change
+                nmpc_mv = inv_input_mapping_matrix(obj.UAVS{i}.model_params) * nmpc_mv;
+
                 obj.UAVS{i}.U = nmpc_mv.';
 
                 % inspect ACADO output
@@ -859,23 +849,23 @@ classdef UAVNetwork < handle
                 end
 
                 % CBF poles placement
-                pole_0 = max(10,-CBF_h_f_dot(obj.UAVS{i}.X(1:6),[non_neigh(1,:) non_neigh(2,:)],obj.d_safe)/CBF_h_f(obj.UAVS{i}.X,non_neigh(1,:),obj.d_safe));
-                pole_1 = 15;
+                pole_0 = max(5,-CBF_h_f_dot(obj.UAVS{i}.X(1:6),[non_neigh(1,:) non_neigh(2,:)],obj.d_safe)/CBF_h_f(obj.UAVS{i}.X,non_neigh(1,:),obj.d_safe));
+                pole_1 = 10;
 
                 % use constant position values along the prediction horizon
-%                 if num_non_neigh == 3
-%                     obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 1 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1);
-%                 elseif num_non_neigh == -1
-%                     obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 0 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1);
-%                 end
+                if num_non_neigh == 3
+                    obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 1 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1);
+                elseif num_non_neigh == -1
+                    obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 0 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1);
+                end
 
                 % use future position estimate for the obstacle
-                if num_non_neigh == 3
-                    obs_od_data = [positions repmat([v_hat a_hat obj.d_safe 1 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1)];
-                elseif num_non_neigh == -1
-                    obs_od_data = [positions repmat([v_hat a_hat obj.d_safe 0 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1)];
-                end
-                obj.UAVS{i}.ACADO_input.od = obs_od_data;
+%                 if num_non_neigh == 3
+%                     obs_od_data = [positions repmat([v_hat a_hat obj.d_safe 1 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1)];
+%                 elseif num_non_neigh == -1
+%                     obs_od_data = [positions repmat([v_hat a_hat obj.d_safe 0 pole_0 pole_1],obj.NMPC_handle.PredictionHorizon+1,1)];
+%                 end
+%                 obj.UAVS{i}.ACADO_input.od = obs_od_data;
 
 
 %                 obj.UAVS{i}.ACADO_input.od = repmat([reshape(non_neigh.',1,[]) obj.d_safe 0 0 0],obj.NMPC_handle.PredictionHorizon+1,1);
@@ -953,6 +943,8 @@ classdef UAVNetwork < handle
             end
         end
     
+
+        %% STOP_SIG
         function stop_UAVS(obj)
             for i = 1 : N
 %                 obj.UAVS{i}.trajectory_ref = [obj.UAVS{i}.trajectory_ref(obj.UAVS{i}.trajectory_step,1:2) 0 0];
