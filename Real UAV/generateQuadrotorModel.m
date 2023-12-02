@@ -234,16 +234,41 @@ end
 
 %% build 1st order modified CBF
 
-if ~CHANGE_OF_INPUT
-    syms x_obs y_obs z_obs x_obs_dot y_obs_dot z_obs_dot d_dist mu real;
+if CHANGE_OF_INPUT
+    syms x_obs y_obs z_obs x_obs_dot y_obs_dot z_obs_dot mu real;
     
     p_obs = [x_obs y_obs z_obs].';
     p_obs_dot = [x_obs_dot y_obs_dot z_obs_dot].';
 
-    h_f_mod = simplify(([x y z].'-p_obs).' *([x y z].'-p_obs) + mu * [dx dy dz] * ([x;y;z]-p_obs) - d_dist^2);
+    h_f_mod = simplify(([x y z].'-p_obs).' *([x y z].'-p_obs) + mu * [dx dy dz] * ([x;y;z]-p_obs));
+
+%     matlabFunction(h_f_mod,'file','./ACADO_NMPC/CBF_h_f_mod','vars',{sym_model_state,p_obs,mu,sym_model_params},'optimize',false);
     
     % here the control input appears
     h_f_mod_dot = simplify(jacobian(h_f_mod,sym_model_state)*quadrotor_model+jacobian(h_f_mod,p_obs)*p_obs_dot);
+
+%     matlabFunction(h_f_mod_dot,'file','./ACADO_NMPC/CBF_h_f_mod_dot','vars',{sym_model_state,sym_model_inputs,p_obs,p_obs_dot,mu,sym_model_params},'optimize',false);
+end
+
+%% build 4th order modified CBF
+
+if CHANGE_OF_INPUT
+    syms x_obs y_obs z_obs x_obs_dot y_obs_dot z_obs_dot d_dist mu q real;
+    syms p_dddot_x p_dddot_y p_dddot_z real;
+    
+    p = [x y z].';
+    p_dot = [dx dy dz].';
+    p_obs = [x_obs y_obs z_obs].';
+    p_obs_dot = [x_obs_dot y_obs_dot z_obs_dot].';
+
+    h_f_mod4 = simplify((p-p_obs).' * (p-p_obs) + mu * (p-p_obs).' * (q * p_dot + pos_jerk));
+
+%     matlabFunction(h_f_mod4,'file','./ACADO_NMPC/CBF_h_f_mod4','vars',{simplified_states_aug2,p_obs,mu,q,sym_model_params},'optimize',false);
+    
+    % here the control input appears
+    h_f_mod4_dot = simplify(jacobian(h_f_mod4,simplified_states_aug2)*simplified_quadrotor_model_aug2+jacobian(h_f_mod4,p_obs)*p_obs_dot);
+
+%     matlabFunction(h_f_mod4_dot,'file','./ACADO_NMPC/CBF_h_f_mod4_dot','vars',{simplified_states_aug2,quadrotor_model_input2,p_obs,p_obs_dot,mu,q,sym_model_params},'optimize',false);
 end
 
 %% generate functions

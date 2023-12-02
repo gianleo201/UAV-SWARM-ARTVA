@@ -7,10 +7,11 @@ function c_inputs = FL_step(aug_state,out_ref,model_params)
     end
     
 %     K_x = [16 32 24 8]; % (4 eigenvalues in -2)
-    K_x = [81 108 54 12]; % (4 eigenvalues in -3) better tracking
+%     K_x = [81 108 54 12]; % (4 eigenvalues in -3) better tracking
 %     K_x = [100 140 69 14]; % (2 eigenvalues in -5, 2 eigenvalues in -3)
 %     K_x = [256 256 96 16]; % (4 eigenvalues in -4)
-%     K_x = [1296 864 216 24]; % (4 eigenvalues in -6)
+    K_x = [1296 864 216 24]; % (4 eigenvalues in -6)
+%     K_x = [160000 32000 2400 80]; % (4 eigenvalues in -20)
 
     K_psi = [1 2];
 

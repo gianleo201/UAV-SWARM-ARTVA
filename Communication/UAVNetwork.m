@@ -433,14 +433,17 @@ classdef UAVNetwork < handle
         %% Hierarcical controller step
         function Us = HC_UAV_TEAM_step(obj)
             Us = zeros(obj.NUM_UAVS,4);
-%             kp = 0.4;
-%             kd = 0.5;
-%             mu = 1.4;
-            kp = 2.5;
-            kd = 4;
-            mu = 1.6;
-%             delta_1 = obj.d_safe * 1.5;
-            delta_1 = 1.5*obj.d_safe;
+%             kp = 0.8;
+%             kd = 1.2;
+%             kp_attitude = 36;
+%             kd_attitude = 12;
+%             mu = 0.9;
+            kp = 1.44;
+            kd = 2.4;
+            kp_attitude = 144;
+            kd_attitude = 24;
+            mu = 0.6;
+            delta_1 = (obj.d_safe^2) / 2;
             for i = 1:obj.NUM_UAVS
 
                 % get current state
@@ -464,27 +467,17 @@ classdef UAVNetwork < handle
                 cartesian_ref_k = [temp(1:2) 1.5 temp(3:4) 0]; % [x x_dot]
 %                 cartesian_ref_k = [x_k(1:3) zeros(1,3)];
 
-                % compute cartesian pd action
+                
+                % retrieve nearest obstacle position
                 non_neigh = obj.UAVS{i}.OD.Parameters{3};
                 p_obs = non_neigh(1,:);
+                p_obs_dot = non_neigh(2,:);
                 num_non_neigh = obj.UAVS{i}.OD.Parameters{4};
+
+                % compute cartesian pd action
                 u_cartesian_ref = kp * (cartesian_ref_k(1:3) - x_k(1:3)) + kd * (cartesian_ref_k(4:6) - x_k(4:6));
 
-                if num_non_neigh == 3 && norm(x_k(1:3)-p_obs) <= delta_1
-                    % build projector and complementary projector
-                    p = x_k(1:3);
-                    p_dot = x_k(4:6);
-                    PROJ = (p-p_obs).' * ((p-p_obs) * (p-p_obs).')^(-1) * (p-p_obs);
-                    C_PROJ = eye(3)-PROJ;
-                    % override control input by penilizing approaching the
-                    % obstacle
-                    u_cartesian_ref = ( (-2/mu) * PROJ * p_dot.' + C_PROJ * u_cartesian_ref.' ).';
-                elseif num_non_neigh == -1 || norm(x_k(1:3)-p_obs) > delta_1
-                    u_cartesian_ref = u_cartesian_ref;
-                else
-                    fprintf("Not possible !!!! \n");
-                end
-                
+                % load useful parameters
                 m = obj.UAVS{i}.model_params(6);
                 g = obj.UAVS{i}.model_params(7);
                 Jxx = obj.UAVS{i}.model_params(3);
@@ -498,11 +491,40 @@ classdef UAVNetwork < handle
                 theta_ref = atan((u_cartesian_ref(1)*cos(psi)+u_cartesian_ref(2)*sin(psi))/(u_cartesian_ref(3)+g));
                 phi_ref = atan(cos(theta_ref) * ((u_cartesian_ref(1)*sin(psi)-u_cartesian_ref(2)*cos(psi))/(u_cartesian_ref(3)+g)));
                 
-                kp_attitude = 36;
-                kd_attitude = 12;
+                % compute torques
                 tau_phi = Jxx * ( kp_attitude*(phi_ref-phi) - kd_attitude*(phi_dot) );
                 tau_theta = Jyy * ( kp_attitude*(theta_ref-theta) - kd_attitude*(theta_dot) ) ;
                 tau_psi = Jzz * ( -kp_attitude*(psi) - kd_attitude*(psi_dot) );
+
+                % evaluate switch condition
+                curr_cbf = CBF_h_f_mod(x_k.',p_obs.',mu,obj.UAVS{i}.model_params);
+                curr_cbf_dot = CBF_h_f_mod_dot(x_k.',[T;tau_phi;tau_theta;tau_psi],p_obs.',p_obs_dot.',mu,obj.UAVS{i}.model_params);
+
+                SWITCH_CONDITION = (curr_cbf <= delta_1 && curr_cbf_dot <= 0);
+
+                if num_non_neigh == 3 && SWITCH_CONDITION
+                    % build projector and complementary projector
+                    p = x_k(1:3);
+                    p_dot = x_k(4:6);
+                    PROJ = (p-p_obs).' * ((p-p_obs) * (p-p_obs).')^(-1) * (p-p_obs);
+                    C_PROJ = eye(3)-PROJ;
+                    % override control input by penilizing approaching the
+                    % obstacle
+                    u_cartesian_ref = ( (-2/mu) * PROJ * p_dot.' + C_PROJ * u_cartesian_ref.' ).';
+%                     u_cartesian_ref = ( (-2/mu) * PROJ * (p_dot-p_obs_dot).' + (p-p_obs)*(p_dot*p_obs_dot.')/(norm(p-p_obs)^2) + C_PROJ * u_cartesian_ref.' ).';
+                
+                    % re-compute trust
+                    T = m*(u_cartesian_ref(3)+g)/(cos(phi)*cos(theta));
+                    
+                    % re-compute roll-pitch angles
+                    theta_ref = atan((u_cartesian_ref(1)*cos(psi)+u_cartesian_ref(2)*sin(psi))/(u_cartesian_ref(3)+g));
+                    phi_ref = atan(cos(theta_ref) * ((u_cartesian_ref(1)*sin(psi)-u_cartesian_ref(2)*cos(psi))/(u_cartesian_ref(3)+g)));
+                    
+                    % re-compute torques
+                    tau_phi = Jxx * ( kp_attitude*(phi_ref-phi) - kd_attitude*(phi_dot) );
+                    tau_theta = Jyy * ( kp_attitude*(theta_ref-theta) - kd_attitude*(theta_dot) ) ;
+                    tau_psi = Jzz * ( -kp_attitude*(psi) - kd_attitude*(psi_dot) );
+                end
 
                 % compute real input
                 U = input_mapping([T;tau_phi;tau_theta;tau_psi],obj.UAVS{i}.model_params).';
@@ -522,15 +544,18 @@ classdef UAVNetwork < handle
         %% FL STEP
         function Us = FL_UAV_TEAM_step(obj)
             Us = zeros(obj.NUM_UAVS,4);
-            mu = 1.6;
             q = 8;
+            delta_1 = obj.d_safe^2 / 2;
+            delta = delta_1/2;
+
             for i = 1:obj.NUM_UAVS
-                % do FL step
+                % augment the state
                 x_k_aug = [obj.UAVS{i}.X obj.UAVS{i}.FL_THRUST obj.UAVS{i}.FL_DTHRUST].';
 
 %                 ref_k = [curr_Refs(i,1:2) 1.5 0;curr_Refs(i,3:4) 0  0;zeros(2,4)];
 %                 ref_k = [curr_Refs(i,1:2) 1.5+(i-1) 0;curr_Refs(i,3:4) 0  0;zeros(2,4)];
 
+                % set up trajectory
                 if obj.UAVS{i}.trajectory_step >= size(obj.UAVS{i}.trajectory_ref,1)
 %                     temp = [obj.UAVS{i}.trajectory_ref(end,1:2) 0 0];
                     temp = [obj.UAVS{i}.trajectory_ref(end,1:2) zeros(1,8)];
@@ -542,20 +567,32 @@ classdef UAVNetwork < handle
 %                 ref_k = [temp(1:2) 1.5+(i-1) 0;temp(3:4) 0  0;zeros(2,4)];
 %                 ref_k = [temp(1:2) 1.5+(i-1) 0;temp(3:4) 0  0;temp(5:6) 0 0;temp(7:8) 0 0;temp(9:10) 0 0];
                 ref_k = [temp(1:2) 1.5+(i-1) 0;temp(3:4) 0  0;zeros(3,4)];
+                ref_k = [temp(1:2) 1.5 0;temp(3:4) 0  0;zeros(3,4)];
 
+                % retrieve nearest obstacle position
                 non_neigh = obj.UAVS{i}.OD.Parameters{3};
-                p_obs = non_neigh(1,:);
                 num_non_neigh = obj.UAVS{i}.OD.Parameters{4};
-                curr_jerk = compute_pos_jerk(x_k_aug,obj.UAVS{i}.model_params).';
-                CRITIC_DIST_SQR = obj.d_safe^2 + obj.d_safe * mu * norm(q*x_k_aug(4:6).'+curr_jerk);
-                CRITIC_DIST = sqrt(CRITIC_DIST_SQR);
-                CRITIC_DIST = obj.d_safe*1.2;
-                if num_non_neigh == 3 && norm(x_k_aug(1:3).' - p_obs) <= CRITIC_DIST
+                p_obs = non_neigh(1,:).'; % obstacle position
+                p_obs_dot = non_neigh(2,:).'; % obstacle velocity
+                
+                % online parameter tuning
+                curr_jerk = compute_pos_jerk(x_k_aug,obj.UAVS{i}.model_params);
+                csi = norm(q*x_k_aug(1:3)+curr_jerk);
+                mu = 2*sqrt(delta)/csi;
+%                 mu = max(mu,1.6);
+
+                % compute nominal input
+                T_mod = FL_step(x_k_aug,ref_k,obj.UAVS{i}.model_params);
+
+                % verify switching condition
+                curr_cbf_mod4 = CBF_h_f_mod4(x_k_aug,p_obs,mu,q,obj.UAVS{i}.model_params);
+                curr_cbf_mod4_dot = CBF_h_f_mod4_dot(x_k_aug,T_mod,p_obs,p_obs_dot,mu,q,obj.UAVS{i}.model_params);
+                
+                SWITCH_CONDITION = ( curr_cbf_mod4 <= delta_1 && curr_cbf_mod4_dot <= 0 );
+
+                if num_non_neigh == 3 && SWITCH_CONDITION
+                    fprintf("UAV %d performing collision avoidance with mu value: %d\n",i,mu);
                     T_mod = FL_step_CA(x_k_aug,ref_k,obj.UAVS{i}.model_params,p_obs,mu,q);
-                elseif num_non_neigh == -1 || norm(x_k_aug(1:3).' - p_obs) > CRITIC_DIST
-                    T_mod = FL_step(x_k_aug,ref_k,obj.UAVS{i}.model_params);
-                else
-                    fprintf("Not possible !!!! \n");
                 end
 
 %                 % DEBUG: override eventually collision avoidance mods
@@ -567,12 +604,12 @@ classdef UAVNetwork < handle
                 % apply saturation function
                 for j = 1:4; if U(j)< 0; U(j)=0; else; if U(j) > 10; U(j) = 10; end; end; end
 
-                % revert input
+                % revert input mapping
                 U = (inv_input_mapping_matrix(obj.UAVS{i}.model_params) * U.' ).';
 
-                % update controller state
-                obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
-%                 obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP+ 0.5*T_mod(1)*obj.TIME_STEP.^2;
+                % controller state discrete update ( discretizing here )
+%                 obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
+                obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP+ 0.5*T_mod(1)*obj.TIME_STEP.^2;
                 obj.UAVS{i}.FL_DTHRUST = obj.UAVS{i}.FL_DTHRUST + T_mod(1)*obj.TIME_STEP;
 %                 obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
                 
@@ -850,7 +887,7 @@ classdef UAVNetwork < handle
 
                 % CBF poles placement
                 pole_0 = max(5,-CBF_h_f_dot(obj.UAVS{i}.X(1:6),[non_neigh(1,:) non_neigh(2,:)],obj.d_safe)/CBF_h_f(obj.UAVS{i}.X,non_neigh(1,:),obj.d_safe));
-                pole_1 = 10;
+                pole_1 = 5;
 
                 % use constant position values along the prediction horizon
                 if num_non_neigh == 3

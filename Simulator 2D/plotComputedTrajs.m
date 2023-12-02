@@ -4,6 +4,7 @@ if ~exist('VIZ_planned_trajs','var')
 
     animation_figure = figure(1); axis equal; hold on;
     set(gcf,'Position',[0 0 1 1]);
+    set(gcf,"Windowstate","maximized");
     pause(1);
     grid on;
     if ~exist("hl_length","var")

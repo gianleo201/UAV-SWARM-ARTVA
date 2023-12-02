@@ -23,8 +23,8 @@ temp_K = cell(N,1);
 for i=1:N
     temp_A{i} = generic_A_matrix;
     temp_B{i} = generic_B_matrix;
-    temp_K{i} = [5 0 20  0;
-                 0 5  0 20]; % control gains
+    temp_K{i} = [15 0 20  0;
+                 0 15  0 20]; % control gains
 end
 
 total_A_matrix = blkdiag(temp_A{:});
@@ -69,8 +69,8 @@ X_hat = [M_hat(1,1) M_hat(1,2) M_hat(1,3) M_hat(2,2) M_hat(2,3) M_hat(3,3) ...
 t_f = 30; % [s]  ( first estimated mission time )
 d_t = 5; % [m]
 % ObjectiveWeights = [1 0.1 10]; % weigths used for last experiments
-ObjectiveWeights = [1 1e-05/N 1e-04/N];
-% ObjectiveWeights = [1 1e-02 1e-01];
+% ObjectiveWeights = [1 1e-05/N 1e-04/N];
+ObjectiveWeights = [1 1e-10/N 1e-04/N];
 OF = buildObjectiveFunction(ObjectiveWeights,N,TIME_STEP,N_approx_bernstain);
 problem.objective = OF;
 problem.solver = 'fmincon';
@@ -119,6 +119,9 @@ if ~USE_NMPC
     end
 end
 
+% change weights for faster computation
+ObjectiveWeights = [1 1e-07/N 1e-08/N];
+
 % event-triggered replanning thresholds
 t_replanning = 10; % replanning timer [s]
 RHO_THRESHOLD = 2;
@@ -142,7 +145,8 @@ my_temp = H_function(N,recievers_pos);
 my_temp = my_temp*my_temp.';
 last_matrix_sum = my_temp;
 my_temp = min_sv_O(last_matrix_sum,min([N,10]));
-OI_VAL = [my_temp];
+% OI_VAL = [my_temp];
+OI_VAL = [0];
 
 % estimate variation
 TRANSMITTER_ESTIMATE_VARIATION = [0];

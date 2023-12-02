@@ -3,10 +3,10 @@ close all;
 
 %% EXECUTION FLAGS
 
-NLP_PLANNING = false;
-DOUBLE_PHASE = true;
+NLP_PLANNING = true;
+DOUBLE_PHASE = false;
 RECORD_VIDEO = false;
-COMPUTING_DEVICE_DELAY = true;
+COMPUTING_DEVICE_DELAY = false;
 USE_NMPC = false;
 CODE_GENERATED_NLP = true;
 EXPLORATION_TYPE = "V";  %% select one in the following string list ["V","H","R"]

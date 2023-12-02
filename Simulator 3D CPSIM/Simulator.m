@@ -10,6 +10,10 @@ recievers_pos_ode = [reciever_INIT(:,1:3) zeros(N,9)];
 recievers_pos_ode_history = zeros(END_TIME/TIME_STEP,N,12);
 recievers_pos_ode_history(1,:,:) = recievers_pos_ode;
 
+% % ------------------- DEBUG ---------------------
+% U_state = zeros(N,2); % [T T_dot];
+% U_state(:,1) = ones(N,1)*5.1012;
+
 a = 1.2920;
 b = 1.0275;
 M_real = diag([b^2 a^2 a^2]);
@@ -191,8 +195,6 @@ TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [NETWORK_ESTIMATES_DEV];
 
 %% CONNECT TO COPPELIA SIM
 
-%{
-
 % connection to env
 client = RemoteAPIClient();
 % sim = client.getObject('sim');
@@ -287,8 +289,6 @@ end
 sim.setStepping(true);
 
 sim.startSimulation();
-
-%}
 
 
 %% MAINLOOP EXECUTION
@@ -501,43 +501,54 @@ while t_simulation(STEP) < t_simulation(end)
     transmitter_pos_hat = (inv(M_hat)*X_hat(7:9).').'; % new transmitter estimate
 
     
+    
     % compute control inputs
     UAV_NET.refresh_nmpc_state(recievers_pos_ode,false);
     if ~USE_NMPC
         % feedback linearization step
-        Us = UAV_NET.FL_UAV_TEAM_step();
+%         Us = UAV_NET.FL_UAV_TEAM_step();
         % hierarcical control step
-%         Us = UAV_NET.HC_UAV_TEAM_step();
+        Us = UAV_NET.HC_UAV_TEAM_step();
     else
         % NMPC step
         Us = UAV_NET.NMPC_UAV_TEAM_step();
     end
+    
 
     % send inputs to coppelia sim
-%     for i = 1:N
+    for i = 1:N
 %         control_UAV(sim,UAV_propellers_list{i},Us(i,:));
-%     end
+        direct_actuation_UAV(sim,UAV_handels{i,1},Us(i,:));
+    end
 
     % coppelia sim integration step
 %     client.step();
-%     sim.step();
-%     for i = 1:N
-%         % get new recievers pos_ode
-%         recievers_pos_ode(i,:) = getState(sim,UAV_handels{i,1});
-%         % targets in position estimate
-%         temp_cell = cell(1,3);
-%         for j = 1:3; temp_cell{j} = UAV_NET.UAVS{i}.X_ref(j); end
-%         sim.setObjectPosition(UAV_handels{i,2},sim.handle_world,temp_cell);
-%         % show centralized estimated position
-%         for j = 1:3; temp_cell{j} = transmitter_pos_hat(j); end
-%         temp_cell{3} = 0.05;
-%         sim.setObjectPosition(CPSIM_estimated_position,temp_cell);
-%         temp_cell{3} = transmitter_pos_hat(3);
-%         sim.setObjectPosition(CPSIM_estimated_position_z,temp_cell);
-%     end
+    sim.step();
+    for i = 1:N
+        % get new recievers pos_ode
+        recievers_pos_ode(i,:) = getState(sim,UAV_handels{i,1});
+        % targets in position estimate
+        temp_cell = cell(1,3);
+        for j = 1:3; temp_cell{j} = UAV_NET.UAVS{i}.X_ref(j); end
+        sim.setObjectPosition(UAV_handels{i,2},sim.handle_world,temp_cell);
+        % show centralized estimated position
+        for j = 1:3; temp_cell{j} = transmitter_pos_hat(j); end
+        temp_cell{3} = 0.05;
+        sim.setObjectPosition(CPSIM_estimated_position,temp_cell);
+        temp_cell{3} = transmitter_pos_hat(3);
+        sim.setObjectPosition(CPSIM_estimated_position_z,temp_cell);
+    end
 
-    % manual integration
-    recievers_pos_ode = manual_integration(recievers_pos_ode,Us,model_params,TIME_STEP);
+
+%     % ------------------------- DEBUG -----------------
+%     % manual integration
+% %     recievers_pos_ode = manual_integration(recievers_pos_ode,Us,model_params,TIME_STEP);
+% 
+%     % FL continous integration
+% %     [recievers_pos_ode, U_state] = continous_integration_FL(recievers_pos_ode,U_state,model_params,TIME_STEP,UAV_NET);
+%     
+%     % HC continous integration
+%     recievers_pos_ode = continous_integration_HC(recievers_pos_ode,model_params,TIME_STEP,UAV_NET);
     
     % process new state
     recievers_pos = recievers_pos_ode(:,1:3);
@@ -610,7 +621,7 @@ while t_simulation(STEP) < t_simulation(end)
 end
 
 % stop simulation
-% sim.stopSimulation();
+sim.stopSimulation();
 
 hold off;
 
@@ -763,7 +774,7 @@ if USE_NMPC
     saveas(fig8,'./tmp_dir/CPU_TIME','epsc');
 end
 
-%% functions
+%% CoppeliaSim interface functions
 
 function UAV_state = getState(sim,UAV)
     T_temp = sim.getObjectMatrix(UAV,sim.handle_world);
@@ -806,10 +817,54 @@ function control_UAV(sim,UAV_propeller_list,controls)
 end
 
 
+function direct_actuation_UAV(sim,UAV_handle,control)
+    m = sim.getObjectMatrix(UAV_handle,sim.handle_world);
+    m{4} = 0;
+    m{8} = 0;
+    m{12} = 0;
+    force = {0,0,control(1)}; % in local frame
+    torque = {control(2),control(3),control(4)}; % in local frame
+    force = sim.multiplyVector(m,force); % in global frame
+    torque = sim.multiplyVector(m,torque); % in global frame
+    % apply force torque to UAV
+    sim.addForceAndTorque(UAV_handle,force,torque);
+end
+
+%% Continous time integration functions
+
 function new_pos_ode = manual_integration(old_pos_ode,Us,model_params,Ts)
     new_pos_ode = zeros(5,12);
     for i = 1:5
         ode_res = ode45(@(t,x) quad_ode_cinputs(x,Us(i,:).',model_params),[0 Ts],old_pos_ode(i,:).');
+        new_pos_ode(i,:) = ode_res.y(:,end).';
+    end
+end
+
+
+function [new_pos_ode, new_u_state] = continous_integration_FL(old_pos_ode,old_u_state,model_params,Ts,UAV_NET)
+    new_pos_ode = zeros(5,12);
+    new_u_state = zeros(5,2);
+    for i = 1:5
+        curr_ref = UAV_NET.UAVS{i}.trajectory_ref(UAV_NET.UAVS{i}.trajectory_step,:);
+        if UAV_NET.UAVS{i}.trajectory_step < size(UAV_NET.UAVS{i}.trajectory_ref,1)
+            UAV_NET.UAVS{i}.trajectory_step = UAV_NET.UAVS{i}.trajectory_step + 1;
+        end
+        curr_ref = [curr_ref(1:2) 1.5 0;curr_ref(3:4) 0 0;zeros(3,4)];
+        ode_res = ode45(@(t,x) quad_ode_aug(x,FL_step(x,curr_ref,model_params),model_params),[0 Ts],[old_pos_ode(i,:) old_u_state(i,:)].');
+        new_pos_ode(i,:) = ode_res.y(1:12,end).';
+        new_u_state(i,:) = ode_res.y(13:14,end).';
+    end
+end
+
+function new_pos_ode = continous_integration_HC(old_pos_ode,model_params,Ts,UAV_NET)
+    new_pos_ode = zeros(5,12);
+    for i = 1:5
+        curr_ref = UAV_NET.UAVS{i}.trajectory_ref(UAV_NET.UAVS{i}.trajectory_step,:);
+        if UAV_NET.UAVS{i}.trajectory_step < size(UAV_NET.UAVS{i}.trajectory_ref,1)
+            UAV_NET.UAVS{i}.trajectory_step = UAV_NET.UAVS{i}.trajectory_step + 1;
+        end
+        curr_ref = [curr_ref(1:2) 1.5 curr_ref(3:4) 0];
+        ode_res = ode45(@(t,x) quad_ode_cinputs(x,HC_step(x,curr_ref,model_params),model_params),[0 Ts],old_pos_ode(i,:).');
         new_pos_ode(i,:) = ode_res.y(:,end).';
     end
 end
