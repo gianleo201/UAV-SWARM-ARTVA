@@ -93,12 +93,12 @@ if ~USE_NMPC || NLP_AND_NMPC
 end
 
 % ObjectiveWeights = [1 1e-6/N 1e-02];
-ObjectiveWeights = [1 1e-10/N 1e-08/N];
+ObjectiveWeights = [1 5e-02/N 1e-08/N];
 
 % event-triggered replanning thresholds
 t_replanning = 10; % replanning timer [s]
 RHO_THRESHOLD = 2;
-SIGMA_TRESHOLD = 0.7;
+SIGMA_TRESHOLD = 0.002;
 
 % compute number of pairs of interdistances
 NUM_DIST = N*(N-1)/2;
@@ -114,26 +114,27 @@ for i = 1:N
 end
 
 % obsevability index
-% my_temp = H_function(N,recievers_pos);
-my_temp = H_function(N,[recievers_pos(:,1:2) zeros(N,1)]);
+my_temp = H_function(N,recievers_pos);
+% my_temp = H_function(N,[recievers_pos(:,1:3) zeros(N,1)]);
 my_temp = my_temp*my_temp.';
 last_matrix_sum = my_temp;
 my_temp = min_sv_O(last_matrix_sum,min([N,10]));
-OI_VAL = [my_temp];
+OI_VAL = [0];
 
 % estimate variation
 TRANSMITTER_ESTIMATE_VARIATION = [0];
 ESTIMATE_VARIATION_THRESHOLD = 1e-04;
 
 % estimate error
-TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
+TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos-transmitter_pos_hat)];
 
 % initialize async-system
 if COMPUTING_DEVICE_DELAY
     NOMINAL_TRANSMISSION_DISTANCE = 50; % [m] is the distance between any UAV and the estimation device such that the nominal transmission time is the sample time
     medium_velocity = NOMINAL_TRANSMISSION_DISTANCE/TIME_STEP; % [m/s]
     uncertain_time_range = 40*TIME_STEP; % [s]
-    estimation_device_pos = [0 -35 0];
+%     estimation_device_pos = [0 -35 0];
+    estimation_device_pos = [0 -35 1.5];
     AS = Dispatcher(N,TIME_STEP,recievers_pos_ode,NaN,NaN);
 end
 
@@ -185,13 +186,13 @@ UAV_NET = UAVNetwork(N, ...
                      model_params);
 end
 
-% DRLS estimate variation from standard RLS
-NETWORK_ESTIMATES = UAV_NET.pull_estimates();
-NETWORK_ESTIMATES_DEV = zeros(1,N);
-for i = 1 : N
-    NETWORK_ESTIMATES_DEV(i) = norm(NETWORK_ESTIMATES(i,1:3)-transmitter_pos_hat);
-end
-TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [NETWORK_ESTIMATES_DEV];
+% % DRLS estimate variation from standard RLS
+% NETWORK_ESTIMATES = UAV_NET.pull_estimates();
+% NETWORK_ESTIMATES_DEV = zeros(1,N);
+% for i = 1 : N
+%     NETWORK_ESTIMATES_DEV(i) = norm(NETWORK_ESTIMATES(i,:)-transmitter_pos_hat);
+% end
+% TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [NETWORK_ESTIMATES_DEV];
 
 %% CONNECT TO COPPELIA SIM
 
@@ -199,6 +200,7 @@ TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [NETWORK_ESTIMATES_DEV];
 client = RemoteAPIClient();
 % sim = client.getObject('sim');
 sim = client.require('sim');
+UAV_NET.sim = sim;
 
 % get uav handles
 UAV_propellers_list = cell(1,N);
@@ -209,10 +211,11 @@ for i =1:N
     UAV_handels{i,2} = sim.getObject("/Quadcopter["+num2str(i-1)+"]/target");
     temp_vec = zeros(1,4);
     for j=1:4
-        temp_vec(j) = sim.getObject("/Quadcopter["+num2str(i-1)+"]/propeller["+num2str(j-1)+"]/joint");
+        temp_vec(j) = sim.getObject("/Quadcopter["+num2str(i-1)+"]/propeller["+num2str(j-1)+"]/respondable");
     end
     UAV_propellers_list{i} = temp_vec;
 end
+UAV_NET.UAV_handels = UAV_handels;
 
 % place UAVs properly
 for i=1:N
@@ -244,6 +247,17 @@ end
 % end
 
 % show planner device position
+vertex_elements = cell(1,N+1);
+vertex_elements{1} = sim.getObject("/NodeGraph/c");
+for i = 1:5
+    vertex_elements{i+1} = sim.getObject("/NodeGraph/v["+num2str(i-1)+"]");
+end
+for i = 1:5
+    sim.setObjectInt32Param(vertex_elements{i},sim.objintparam_visibility_layer,0);
+end
+VIZ_HIDDEN_CONNECTION = false;
+enable_node_graph(sim,vertex_elements);
+
 PlannerDevice = sim.getObject("./Planner");
 CPSIM_node_graph = sim.getObject("./NodeGraph");
 if exist("estimation_device_pos","var")
@@ -252,19 +266,21 @@ if exist("estimation_device_pos","var")
     sim.setObjectInt32Param(PlannerDevice,sim.objintparam_visibility_layer,1);
     temp_cell = cell(1,3);
     for j = 1:3; temp_cell{j} = estimation_device_pos(j); end
-    temp_cell{3} = 0.5;
+    temp_cell{3} = temp_cell{3} + 0.5;
     sim.setObjectPosition(PlannerDevice,temp_cell);
     
     % set nodegraph position
     sim.setObjectInt32Param(CPSIM_node_graph,sim.objintparam_visibility_layer,1);
     temp_cell = cell(1,3);
     for j = 1:3; temp_cell{j} = estimation_device_pos(j); end
-    temp_cell{3} = 1;
+    temp_cell{3} = temp_cell{3} + 1;
     sim.setObjectPosition(CPSIM_node_graph,temp_cell);
 else
     sim.setObjectInt32Param(PlannerDevice,sim.objintparam_visibility_layer,0);
     sim.setObjectInt32Param(CPSIM_node_graph,sim.objintparam_visibility_layer,0);
+    disable_node_graph(sim,vertex_elements);
 end
+
 
 
 % show centralized estimated position
@@ -277,13 +293,14 @@ temp_cell{3} = transmitter_pos_hat(3);
 sim.setObjectPosition(CPSIM_estimated_position_z,temp_cell);
 
 
+
 % initial inputs (gravity compensation to hover)
 for i=1:N
-    % input as thrusts
-%     control_UAV(sim,UAV_propellers_list{i},[1.2753,1.2753,1.2753,1.2753]);
-    % cinputs
-    control_UAV(sim,UAV_propellers_list{i},[5.1012 0 0 0]);
+    % cinputs (for simplicity: UAV can be also controlled at propellers)
+    direct_actuation_UAV(sim,UAV_handels{i,1},[5.1012 0 0 0]);
 end
+
+
 
 % client.setStepping(true);
 sim.setStepping(true);
@@ -319,6 +336,12 @@ plotComputedTrajs;
 visualize_init;
 while t_simulation(STEP) < t_simulation(end)
 
+    % stop connection visualization
+    if COMPUTING_DEVICE_DELAY && t_simulation(STEP) >= 5 && ~VIZ_HIDDEN_CONNECTION
+        disable_node_graph(sim,vertex_elements);
+        VIZ_HIDDEN_CONNECTION = true;
+    end 
+
     if ~USE_NMPC || NLP_AND_NMPC
         if ~COMPUTING_DEVICE_DELAY ||  t_simulation(STEP) >= 5
             % ending condition on estimate variation
@@ -344,7 +367,7 @@ while t_simulation(STEP) < t_simulation(end)
 
         if  (NLP_PLANNING || DOUBLE_PHASE || NLP_AND_NMPC) && t_replanning <= 0
             ESTIMATE_ERROR = norm(transmitter_pos_hat-last_replanning_transmitter_pos_hat);
-            OPI = OI_function(recievers_pos_ode_history(1:STEP,:,1:2));
+            OPI = OI_function(recievers_pos_ode_history(1:STEP,:,1:3));
             if  ESTIMATE_ERROR > RHO_THRESHOLD || ...
                 OPI <= SIGMA_TRESHOLD
                 last_replanning_transmitter_pos_hat = transmitter_pos_hat;
@@ -384,7 +407,7 @@ while t_simulation(STEP) < t_simulation(end)
             if  (NLP_PLANNING || DOUBLE_PHASE || NLP_AND_NMPC) && t_replanning <= 0
     
                 ESTIMATE_ERROR = norm(transmitter_pos_hat-last_replanning_transmitter_pos_hat);
-                OPI = OI_function(recievers_pos_ode_history(1:STEP,:,1:2));
+                OPI = OI_function(recievers_pos_ode_history(1:STEP,:,1:3));
                 
                 if  ESTIMATE_ERROR > RHO_THRESHOLD || OPI <= SIGMA_TRESHOLD
                     
@@ -480,15 +503,15 @@ while t_simulation(STEP) < t_simulation(end)
         H_num = H_function(N,available_pos);
         Y_num = Y_function(N,available_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
 
-        % compute new values decentralized
-        UAV_NET.DRLS(beta_ff,Y_num,H_num,true,(STEP-1)*TIME_STEP);
+%         % compute new values decentralized
+%         UAV_NET.DRLS(beta_ff,Y_num,H_num,true,(STEP-1)*TIME_STEP);
     else 
         % compute new values centralized
         H_num = H_function(N,recievers_pos);
         Y_num = Y_function(N,recievers_pos,transmitter_real_pos.',[a b],[M_real(1,1:3) M_real(2,2:3) M_real(3,3)],0,0);
 
-        % compute new values decentralized
-        UAV_NET.DRLS(beta_ff,Y_num,H_num,false);
+%         % compute new values decentralized
+%         UAV_NET.DRLS(beta_ff,Y_num,H_num,false);
     end
 
     % RLS algorithm step
@@ -501,14 +524,13 @@ while t_simulation(STEP) < t_simulation(end)
     transmitter_pos_hat = (inv(M_hat)*X_hat(7:9).').'; % new transmitter estimate
 
     
-    
     % compute control inputs
     UAV_NET.refresh_nmpc_state(recievers_pos_ode,false);
     if ~USE_NMPC
         % feedback linearization step
-%         Us = UAV_NET.FL_UAV_TEAM_step();
+        Us = UAV_NET.FL_UAV_TEAM_step();
         % hierarcical control step
-        Us = UAV_NET.HC_UAV_TEAM_step();
+%         Us = UAV_NET.HC_UAV_TEAM_step();
     else
         % NMPC step
         Us = UAV_NET.NMPC_UAV_TEAM_step();
@@ -517,8 +539,10 @@ while t_simulation(STEP) < t_simulation(end)
 
     % send inputs to coppelia sim
     for i = 1:N
-%         control_UAV(sim,UAV_propellers_list{i},Us(i,:));
+%         % actuation on UAV's body
         direct_actuation_UAV(sim,UAV_handels{i,1},Us(i,:));
+        % actuation on UAV's propellers
+%         propeller_actuation_UAV(sim,UAV_handels{i,1},UAV_propellers_list{i},Us(i,:),[rT rD]);
     end
 
     % coppelia sim integration step
@@ -527,10 +551,10 @@ while t_simulation(STEP) < t_simulation(end)
     for i = 1:N
         % get new recievers pos_ode
         recievers_pos_ode(i,:) = getState(sim,UAV_handels{i,1});
-        % targets in position estimate
-        temp_cell = cell(1,3);
-        for j = 1:3; temp_cell{j} = UAV_NET.UAVS{i}.X_ref(j); end
-        sim.setObjectPosition(UAV_handels{i,2},sim.handle_world,temp_cell);
+%         % targets in position estimate
+%         temp_cell = cell(1,3);
+%         for j = 1:3; temp_cell{j} = UAV_NET.UAVS{i}.X_ref(j); end
+%         sim.setObjectPosition(UAV_handels{i,2},sim.handle_world,temp_cell);
         % show centralized estimated position
         for j = 1:3; temp_cell{j} = transmitter_pos_hat(j); end
         temp_cell{3} = 0.05;
@@ -552,8 +576,6 @@ while t_simulation(STEP) < t_simulation(end)
     
     % process new state
     recievers_pos = recievers_pos_ode(:,1:3);
-    % update the state in UAV_NET
-    UAV_NET.refresh_nmpc_state(recievers_pos_ode,false);
 
     % next step
     STEP = STEP + 1;
@@ -593,8 +615,7 @@ while t_simulation(STEP) < t_simulation(end)
     recievers_pos_ode_history(STEP,:,:) = recievers_pos_ode;
 
     % update Observability index value
-%     my_temp = H_function(N,recievers_pos);
-    my_temp = H_function(N,[recievers_pos(:,1:2) zeros(N,1)]);
+    my_temp = H_num;
     my_temp = my_temp*my_temp.';
     last_matrix_sum = last_matrix_sum + (my_temp - last_matrix_sum)/STEP;
     new_OI = min_sv_O(last_matrix_sum,min([N,10]));
@@ -603,15 +624,15 @@ while t_simulation(STEP) < t_simulation(end)
     % update estimate error and variation
     my2_temp = norm(transmitter_pos_hat-old_transmitter_pos_hat);
     TRANSMITTER_ESTIMATE_VARIATION = [TRANSMITTER_ESTIMATE_VARIATION my2_temp];
-    TRANSMITTER_ESTIMATE_ERROR = [TRANSMITTER_ESTIMATE_ERROR norm(transmitter_real_pos(1:2)-transmitter_pos_hat(1:2))];
+    TRANSMITTER_ESTIMATE_ERROR = [TRANSMITTER_ESTIMATE_ERROR norm(transmitter_real_pos-transmitter_pos_hat)];
 
     % update DRLS estimate deviation form standard RLS
-    NETWORK_ESTIMATES = UAV_NET.pull_estimates();
-    NETWORK_ESTIMATES_DEV = zeros(1,N);
-    for i = 1 : N
-        NETWORK_ESTIMATES_DEV(i) = norm(NETWORK_ESTIMATES(i,1:2)-transmitter_pos_hat(1:2));
-    end
-    TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [TRANSMITTER_ESTIMATE_DRLS_DEVIATION;NETWORK_ESTIMATES_DEV];
+%     NETWORK_ESTIMATES = UAV_NET.pull_estimates();
+%     NETWORK_ESTIMATES_DEV = zeros(1,N);
+%     for i = 1 : N
+%         NETWORK_ESTIMATES_DEV(i) = norm(NETWORK_ESTIMATES(i,:)-transmitter_pos_hat(:));
+%     end
+%     TRANSMITTER_ESTIMATE_DRLS_DEVIATION = [TRANSMITTER_ESTIMATE_DRLS_DEVIATION;NETWORK_ESTIMATES_DEV];
 
     % visualize step
     visualize_update;
@@ -692,6 +713,7 @@ grid on; hold on;
 title("Observability index");
 xlabel("time [s]");
 xlim([0 TIME_STEP*STEP]);
+ylim([0 0.005]);
 plot(t_simulation(1:STEP),OI_VAL,"Color","Black","LineWidth",2.0);
 plot(t_simulation(1:STEP),repmat(SIGMA_TRESHOLD,STEP,1),"--","Color","Black","LineWidth",1.5);
 hold off;
@@ -734,20 +756,20 @@ saveas(fig6,'./tmp_dir/TEE.fig');
 saveas(fig6,'./tmp_dir/TEE','epsc');
 
 % plot DRLS deviation from standard RLS
-fig7 = figure(7);
-grid on; hold on;
-title("DRLS deviation from centralized RLS");
-xlabel("time [s]");
-ylabel("[m]");
-xlim([0 TIME_STEP*STEP]);
-ylim([0 5]);
-for i = 1 : N
-    plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_DRLS_DEVIATION(:,i).',"Color",color_list(i),"LineWidth",2.0);
-end
-hold off;
-saveas(fig7,'./tmp_dir/DRLS_deviation.png');
-saveas(fig7,'./tmp_dir/DRLS_deviation.fig');
-saveas(fig7,'./tmp_dir/DRLS_deviation','epsc');
+% fig7 = figure(7);
+% grid on; hold on;
+% title("DRLS deviation from centralized RLS");
+% xlabel("time [s]");
+% ylabel("[m]");
+% xlim([0 TIME_STEP*STEP]);
+% ylim([0 5]);
+% for i = 1 : N
+%     plot(t_simulation(1:STEP),TRANSMITTER_ESTIMATE_DRLS_DEVIATION(:,i).',"Color",color_list(i),"LineWidth",2.0);
+% end
+% hold off;
+% saveas(fig7,'./tmp_dir/DRLS_deviation.png');
+% saveas(fig7,'./tmp_dir/DRLS_deviation.fig');
+% saveas(fig7,'./tmp_dir/DRLS_deviation','epsc');
 
 if USE_NMPC
     % plot cputime
@@ -810,13 +832,6 @@ function UAV_state = getState(sim,UAV)
     UAV_state = double([x dx_mat w_mat rpy]);
 end
 
-function control_UAV(sim,UAV_propeller_list,controls)
-    for i = 1:length(UAV_propeller_list)
-        sim.setJointTargetVelocity(UAV_propeller_list(i),controls(i));
-    end
-end
-
-
 function direct_actuation_UAV(sim,UAV_handle,control)
     m = sim.getObjectMatrix(UAV_handle,sim.handle_world);
     m{4} = 0;
@@ -828,6 +843,24 @@ function direct_actuation_UAV(sim,UAV_handle,control)
     torque = sim.multiplyVector(m,torque); % in global frame
     % apply force torque to UAV
     sim.addForceAndTorque(UAV_handle,force,torque);
+end
+
+function propeller_actuation_UAV(sim,UAV_handle,propeller_handles,control,ad_params)
+    rT = ad_params(1);
+    rD = ad_params(2);
+    m = sim.getObjectMatrix(UAV_handle,sim.handle_world);
+    m{4} = 0;
+    m{8} = 0;
+    m{12} = 0;
+    for i=1:4
+        force = {0,0,control(i)}; % in local frame
+        zt = (rD/rT) * (1 - 2 * mod(i,2)) * control(i); 
+        torque = {0,0,zt}; % in local frame
+        force = sim.multiplyVector(m,force); % in global frame
+        torque = sim.multiplyVector(m,torque); % in global frame
+        % apply force torque to UAV
+        sim.addForceAndTorque(propeller_handles(i),force,torque);
+    end
 end
 
 %% Continous time integration functions
@@ -866,5 +899,19 @@ function new_pos_ode = continous_integration_HC(old_pos_ode,model_params,Ts,UAV_
         curr_ref = [curr_ref(1:2) 1.5 curr_ref(3:4) 0];
         ode_res = ode45(@(t,x) quad_ode_cinputs(x,HC_step(x,curr_ref,model_params),model_params),[0 Ts],old_pos_ode(i,:).');
         new_pos_ode(i,:) = ode_res.y(:,end).';
+    end
+end
+
+%% aux viz functions
+
+function disable_node_graph(sim,vertex_elements)
+    for i = 1:length(vertex_elements)
+        sim.setObjectInt32Param(vertex_elements{i},sim.objintparam_visibility_layer,0);
+    end
+end
+
+function enable_node_graph(sim,vertex_elements)
+    for i = 1:length(vertex_elements)
+        sim.setObjectInt32Param(vertex_elements{i},sim.objintparam_visibility_layer,1);
     end
 end

@@ -120,7 +120,7 @@ if ~USE_NMPC
 end
 
 % change weights for faster computation
-ObjectiveWeights = [1 1e-07/N 1e-08/N];
+ObjectiveWeights = [1 1e-04/N 1e-05/N];
 
 % event-triggered replanning thresholds
 t_replanning = 10; % replanning timer [s]
@@ -159,7 +159,7 @@ TRANSMITTER_ESTIMATE_ERROR = [norm(transmitter_real_pos(1:2)-transmitter_pos_hat
 if COMPUTING_DEVICE_DELAY
     NOMINAL_TRANSMISSION_DISTANCE = 50; % [m] is the distance between any UAV and the estimation device such that the nominal transmission time is the sample time
     medium_velocity = NOMINAL_TRANSMISSION_DISTANCE/TIME_STEP; % [m/s]
-    uncertain_time_range = 50*TIME_STEP; % [s]
+    uncertain_time_range = 20*TIME_STEP; % [s]
     estimation_device_pos = [0 -35 0];
     AS = Dispatcher(N,TIME_STEP,recievers_pos_ode,NaN,NaN);
 end
@@ -365,7 +365,7 @@ while t_simulation(STEP) < t_simulation(end)
     recievers_pos_ode_history(STEP,:,:) = recievers_pos_ode;
 
     % update Observability index value
-    my_temp = H_function(N,recievers_pos);
+    my_temp = H_num;
     my_temp = my_temp*my_temp.';
     last_matrix_sum = last_matrix_sum + (my_temp - last_matrix_sum)/STEP;
     new_OI = min_sv_O(last_matrix_sum,min([N,10]));
@@ -452,6 +452,11 @@ for i = 1:N
     plot(t_simulation(1:STEP),VELOCITIES(1:STEP,i),"LineWidth",2.0,"Color",color_list(i));
 end
 plot(t_simulation(1:STEP),repmat(v_max,STEP,1),"--","Color","Black","LineWidth",1.5);
+VEL_lgnd = cell(1,N);
+for i = 1 : N
+    VEL_lgnd{i} = "UAV "+num2str(i);
+end
+legend(VEL_lgnd{:},'Location','best');
 hold off;
 saveas(fig3,'./tmp_dir/VELS.png');
 saveas(fig3,'./tmp_dir/VELS.fig');

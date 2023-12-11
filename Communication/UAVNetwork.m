@@ -13,6 +13,8 @@ classdef UAVNetwork < handle
         DELAY_SYNC;
         FOLLOW_TRAJECTORY;
         SENSING_HORIZON;
+        sim;
+        UAV_handels;
     end
 
     methods
@@ -205,11 +207,11 @@ classdef UAVNetwork < handle
 %                 W_pqr = 0.1;
 
 %                 Wu = 1000; % when simulated in coppelia
-                Wu = 100;
+                Wu = 50;
                 Wx = 20;
                 Wz = 30;
                 Wdx = 5;
-                W_phi_theta = 0.5;
+                W_phi_theta = 1;
                 W_psi = 30;
                 W_pqr = 0.1;
 
@@ -530,7 +532,7 @@ classdef UAVNetwork < handle
                 U = input_mapping([T;tau_phi;tau_theta;tau_psi],obj.UAVS{i}.model_params).';
 
                 % apply saturation function
-                for j = 1:4; if U(j)< 0; U(j)=0; else; if U(j) > 10; U(j) = 10; end; end; end
+                for j = 1:4; if U(j)< 0; U(j)=0; else; if U(j) > 5; U(j) = 5; end; end; end
 
                 % revert input
                 U = (inv_input_mapping_matrix(obj.UAVS{i}.model_params) * U.' ).';
@@ -545,74 +547,90 @@ classdef UAVNetwork < handle
         function Us = FL_UAV_TEAM_step(obj)
             Us = zeros(obj.NUM_UAVS,4);
             q = 8;
-            delta_1 = obj.d_safe^2 / 2;
-            delta = delta_1/2;
+%             delta_1 = obj.d_safe^2 / 2;
+%             delta = delta_1/2;
+            delta_1 = obj.d_safe^2 *1.5;
+            delta = obj.d_safe^2;
+%             delta_1 = 4.9;
+%             delta = delta_1/2;
 
             for i = 1:obj.NUM_UAVS
                 % augment the state
                 x_k_aug = [obj.UAVS{i}.X obj.UAVS{i}.FL_THRUST obj.UAVS{i}.FL_DTHRUST].';
 
-%                 ref_k = [curr_Refs(i,1:2) 1.5 0;curr_Refs(i,3:4) 0  0;zeros(2,4)];
-%                 ref_k = [curr_Refs(i,1:2) 1.5+(i-1) 0;curr_Refs(i,3:4) 0  0;zeros(2,4)];
-
                 % set up trajectory
                 if obj.UAVS{i}.trajectory_step >= size(obj.UAVS{i}.trajectory_ref,1)
-%                     temp = [obj.UAVS{i}.trajectory_ref(end,1:2) 0 0];
                     temp = [obj.UAVS{i}.trajectory_ref(end,1:2) zeros(1,8)];
                 else
                     temp = obj.UAVS{i}.trajectory_ref(obj.UAVS{i}.trajectory_step,:);
                     obj.UAVS{i}.trajectory_step = obj.UAVS{i}.trajectory_step + 1;
                 end
 
-%                 ref_k = [temp(1:2) 1.5+(i-1) 0;temp(3:4) 0  0;zeros(2,4)];
-%                 ref_k = [temp(1:2) 1.5+(i-1) 0;temp(3:4) 0  0;temp(5:6) 0 0;temp(7:8) 0 0;temp(9:10) 0 0];
-                ref_k = [temp(1:2) 1.5+(i-1) 0;temp(3:4) 0  0;zeros(3,4)];
-                ref_k = [temp(1:2) 1.5 0;temp(3:4) 0  0;zeros(3,4)];
+%                 % reference up to acceleration
+%                 ref_k = [temp(1:2) 0 0;temp(3:4) 0  0;zeros(2,4)];
 
+                % reference up to 4th order derivative
+                ref_k = [temp(1:2) 0 0;temp(3:4) 0  0;temp(5:6) 0 0;temp(7:8) 0 0;temp(9:10) 0 0];
+
+                % set flight altitude
+%                 ref_k(1,3) = 1.5;
+%                 ref_k(1,3) = 1.5+(i-1);
+%                 ref_k(1,3) = 5;
+                ref_k(1,3) = 5+(i-1);
+                                
                 % retrieve nearest obstacle position
                 non_neigh = obj.UAVS{i}.OD.Parameters{3};
                 num_non_neigh = obj.UAVS{i}.OD.Parameters{4};
                 p_obs = non_neigh(1,:).'; % obstacle position
                 p_obs_dot = non_neigh(2,:).'; % obstacle velocity
                 
-                % online parameter tuning
+                % online C.A. parameter tuning
                 curr_jerk = compute_pos_jerk(x_k_aug,obj.UAVS{i}.model_params);
                 csi = norm(q*x_k_aug(1:3)+curr_jerk);
-                mu = 2*sqrt(delta)/csi;
+%                 mu = 2*sqrt(delta)/csi;
 %                 mu = max(mu,1.6);
+                mu = 0.01;
 
                 % compute nominal input
                 T_mod = FL_step(x_k_aug,ref_k,obj.UAVS{i}.model_params);
-
+                
+                % COLLISION AVOIDANCE
                 % verify switching condition
                 curr_cbf_mod4 = CBF_h_f_mod4(x_k_aug,p_obs,mu,q,obj.UAVS{i}.model_params);
                 curr_cbf_mod4_dot = CBF_h_f_mod4_dot(x_k_aug,T_mod,p_obs,p_obs_dot,mu,q,obj.UAVS{i}.model_params);
                 
                 SWITCH_CONDITION = ( curr_cbf_mod4 <= delta_1 && curr_cbf_mod4_dot <= 0 );
-
+            
                 if num_non_neigh == 3 && SWITCH_CONDITION
                     fprintf("UAV %d performing collision avoidance with mu value: %d\n",i,mu);
                     T_mod = FL_step_CA(x_k_aug,ref_k,obj.UAVS{i}.model_params,p_obs,mu,q);
                 end
-
-%                 % DEBUG: override eventually collision avoidance mods
-%                 T_mod = FL_step(x_k_aug,ref_k,obj.UAVS{i}.model_params);
+                
                 
                 % compute real input
                 U = input_mapping([obj.UAVS{i}.FL_THRUST;T_mod(2:4,1)],obj.UAVS{i}.model_params).';
                 
-                % apply saturation function
-                for j = 1:4; if U(j)< 0; U(j)=0; else; if U(j) > 10; U(j) = 10; end; end; end
-
+%                 oldU = U;
+% 
+%                 % apply saturation function
+%                 for j = 1:4; if U(j)< 0; U(j)=0; else; if U(j) > 5; U(j) = 5; end; end; end
+% 
+%                 % check if saturation has occured and eventually warn
+%                 if U ~= oldU
+%                     fprintf("UAV %d: FL input is saturated\n",i);
+%                 end
+                
                 % revert input mapping
                 U = (inv_input_mapping_matrix(obj.UAVS{i}.model_params) * U.' ).';
 
+
                 % controller state discrete update ( discretizing here )
 %                 obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
-                obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP+ 0.5*T_mod(1)*obj.TIME_STEP.^2;
+%                 obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP+ 0.5*T_mod(1)*obj.TIME_STEP.^2;
                 obj.UAVS{i}.FL_DTHRUST = obj.UAVS{i}.FL_DTHRUST + T_mod(1)*obj.TIME_STEP;
-%                 obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
+                obj.UAVS{i}.FL_THRUST = obj.UAVS{i}.FL_THRUST + obj.UAVS{i}.FL_DTHRUST*obj.TIME_STEP;
                 
+                % save input
                 Us(i,:) = U;
             end
         end
@@ -652,7 +670,7 @@ classdef UAVNetwork < handle
                     CAN_GO_ON = true;
                     if k_0 < size(obj.UAVS{i}.trajectory_ref,1)
                         % dynamic trajectory indexing
-                        if norm(obj.UAVS{i}.X(1:3) - [obj.UAVS{i}.trajectory_ref(obj.UAVS{i}.trajectory_step,1:2) obj.UAVS{i}.X(3)]) <= 2
+                        if norm(obj.UAVS{i}.X(1:3) - [obj.UAVS{i}.trajectory_ref(obj.UAVS{i}.trajectory_step,1:2) obj.UAVS{i}.X(3)]) <= 4
                             obj.UAVS{i}.trajectory_step = obj.UAVS{i}.trajectory_step + 1;
                         else
                             fprintf("Cannot follow traj\n");
@@ -666,8 +684,10 @@ classdef UAVNetwork < handle
 
                     % define patrolling height
                     curr_z = obj.UAVS{i}.X(3);
-                    z_ref = 1.5;
-%                     z_ref = i*1.5;
+%                     z_ref = 1.5;
+%                     z_ref = 1.5+(i-1);
+%                     z_ref = 5;
+                    z_ref = 5+(i-1);
                     z_refs = zeros(l,1);
                     z_refs(1) = curr_z;
                     lambda = 0.8;
@@ -751,7 +771,7 @@ classdef UAVNetwork < handle
 %                 nmpc_mv = out.x(1,end-3:end).';
                 
                 %input change
-                nmpc_mv = inv_input_mapping_matrix(obj.UAVS{i}.model_params) * nmpc_mv;
+%                 nmpc_mv = inv_input_mapping_matrix(obj.UAVS{i}.model_params) * nmpc_mv;
 
                 obj.UAVS{i}.U = nmpc_mv.';
 
@@ -825,16 +845,37 @@ classdef UAVNetwork < handle
 %                 non_neigh = [non_neigh;zeros(obj.NUM_UAVS-num_non_neigh,3)];
 
                 % select nearest obstalce
-                prev_non_neigh_matrix = obj.UAVS{i}.OD.Parameters{3};
-                if ~obj.THREE_DIMENSIONAL
-                    [nearest_obs,min_dist,min_index] = UAVNetwork.compute_nearest_obs([recievers_pos_ode(i,1:2) 0],[recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,1:2) zeros(size(recievers_pos_ode,1)-1,1)]);
-                    non_neigh = [nearest_obs;zeros(2,3)];
+%                 prev_non_neigh_matrix = obj.UAVS{i}.OD.Parameters{3};
+%                 if ~obj.THREE_DIMENSIONAL
+%                     [nearest_obs,min_dist,min_index] = UAVNetwork.compute_nearest_obs([recievers_pos_ode(i,1:2) 0],[recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,1:2) zeros(size(recievers_pos_ode,1)-1,1)]);
+%                     non_neigh = [nearest_obs;zeros(2,3)];
+%                 else
+%                     [nearest_obs,min_dist,min_index] = UAVNetwork.compute_nearest_obs(recievers_pos_ode(i,1:3),recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,1:3));
+%                     non_neigh = [nearest_obs;zeros(2,3)];
+%                     temp_min_dist_vels = recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,4:6);
+%                     temp_min_dist_vel = temp_min_dist_vels(min_index,:);
+%                     non_neigh = [nearest_obs;temp_min_dist_vel;zeros(1,3)];
+%                 end
+
+                % get the nearest collidable object using coppelia sim
+                sim = obj.sim;
+                UAV_handels = obj.UAV_handels;
+                [there_is_obs,distance_data,handle_pair] = sim.checkDistance(UAV_handels{i,1},sim.handle_all,obj.SENSING_HORIZON);
+                non_neigh = zeros(3,3);
+                min_index = 10;
+                if there_is_obs == 1
+                    obs_pos = distance_data(4:6);
+                    for k_temp = 1:3; obs_pos{k_temp} = double(obs_pos{k_temp}); end
+                    obs_pos = cell2mat(obs_pos);
+                    non_neigh(1,:) = obs_pos;
+                    min_dist = distance_data{7};
+                    % use targets as collision detection display
+                    sim.setObjectPosition(UAV_handels{i,2},sim.handle_world,distance_data(4:6));
+                    sim.setObjectInt32Param(UAV_handels{i,2},sim.objintparam_visibility_layer,1);
                 else
-                    [nearest_obs,min_dist,min_index] = UAVNetwork.compute_nearest_obs(recievers_pos_ode(i,1:3),recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,1:3));
-                    non_neigh = [nearest_obs;zeros(2,3)];
-                    temp_min_dist_vels = recievers_pos_ode(1:size(recievers_pos_ode,1) ~= i,4:6);
-                    temp_min_dist_vel = temp_min_dist_vels(min_index,:);
-                    non_neigh = [nearest_obs;temp_min_dist_vel;zeros(1,3)];
+                    min_dist = obj.SENSING_HORIZON + 1;
+                    % use targets as collision detection display
+                    sim.setObjectInt32Param(UAV_handels{i,2},sim.objintparam_visibility_layer,0);
                 end
 
                 % select most dangerous obstacle
@@ -887,7 +928,7 @@ classdef UAVNetwork < handle
 
                 % CBF poles placement
                 pole_0 = max(5,-CBF_h_f_dot(obj.UAVS{i}.X(1:6),[non_neigh(1,:) non_neigh(2,:)],obj.d_safe)/CBF_h_f(obj.UAVS{i}.X,non_neigh(1,:),obj.d_safe));
-                pole_1 = 5;
+                pole_1 = 50;
 
                 % use constant position values along the prediction horizon
                 if num_non_neigh == 3

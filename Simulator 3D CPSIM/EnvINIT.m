@@ -22,9 +22,10 @@ N = 5;
 % set transimetter initial position
 % orientation is not of interest, imagine the transmitter frame parallel to the inertial one
 transmitter_real_pos = [20 20 1];
+% transmitter_real_pos = [20 20 1];
 
 % initial guess for the transmitter
-transmitter_pos_hat = [0 0 1.5];
+transmitter_pos_hat = [0 0 2.5];
 
 % color list to indetify each UAV
 color_list = ["green","blue"," #FF8000","cyan","magenta"];
@@ -34,7 +35,8 @@ N_approx_bernstain = 5;
 
 % set up initial conditions for the agents
 reciever_INIT = zeros(N,3); %2-dimensional environment. 3d component is always 0.
-reciever_INIT(:,3) = 1.5*ones(size(reciever_INIT,1),1);
+% reciever_INIT(:,3) = 1.5*ones(size(reciever_INIT,1),1);
+reciever_INIT(:,3) = 5*ones(size(reciever_INIT,1),1);
 
 % generic spawn set
 % reciever_INIT(1,1:2) = [10 0];

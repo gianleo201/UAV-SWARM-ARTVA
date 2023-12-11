@@ -9,6 +9,6 @@ function min_sv = min_sv_O(O,max_rank)
     else
         min_sv = 0;
     end
-
+    
 end
 

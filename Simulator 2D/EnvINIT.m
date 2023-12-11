@@ -3,8 +3,8 @@ close all;
 
 %% EXECUTION FLAGS
 
-NLP_PLANNING = true;
-DOUBLE_PHASE = false;
+NLP_PLANNING = false;
+DOUBLE_PHASE = true;
 RECORD_VIDEO = false;
 COMPUTING_DEVICE_DELAY = false;
 USE_NMPC = false;
@@ -21,7 +21,7 @@ N = 5;
 % set transimetter initial position
 % orientation is not of interest, imagine the transmitter frame parallel to the inertial one
 transmitter_real_pos = [25 25 0];
-% transmitter_real_pos = [-5 -5 0];
+% transmitter_real_pos = [0 15 0];
 
 % initial guess for the transmitter
 transmitter_pos_hat = [0 0 0];
